@@ -1,11 +1,20 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { AppShell } from "@/components/AppShell";
 
 export const metadata: Metadata = {
-  title: "Município de Namaacha",
+  title: {
+    default: "Município de Namaacha",
+    template: "%s | Município de Namaacha",
+  },
   description:
-    "Portal digital do Município de Namaacha",
+    "Portal digital de serviços do Município de Namaacha.",
+  applicationName: "Namaacha Digital",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#087C49",
 };
 
 export default function RootLayout({
@@ -15,11 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt">
-      <body>
-        <AppShell>
-          {children}
-        </AppShell>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
