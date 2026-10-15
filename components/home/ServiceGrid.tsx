@@ -5,7 +5,7 @@ import { ServiceCard } from "@/components/services/ServiceCard";
 
 export function ServiceGrid() {
   return (
-    <section className="w-full min-w-0">
+    <section className="w-full min-w-0 pb-6">
       <div className="mb-4 flex items-center justify-between gap-3 sm:mb-5">
         <div className="min-w-0">
           <h2 className="text-base font-bold tracking-tight text-slate-900 sm:text-lg">
@@ -25,7 +25,7 @@ export function ServiceGrid() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
+      <div className="grid w-full min-w-0 grid-cols-3 gap-2 pb-20 sm:gap-3 sm:pb-6 lg:gap-4">
         {municipalServices.map((service) => (
           <ServiceCard
             key={service.id}
@@ -37,4 +37,3 @@ export function ServiceGrid() {
     </section>
   );
 }
-
