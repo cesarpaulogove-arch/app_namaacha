@@ -13,11 +13,9 @@ import {
   CreditCard,
   FileText,
   MapPin,
-  Search,
   ShieldCheck,
   Smartphone,
   Store,
-  X,
 } from "lucide-react";
 import {
   obterContaAtual,
@@ -165,6 +163,7 @@ function lerPedidos(): PedidoMercado[] {
     if (!dados) return [];
 
     const resultado: unknown = JSON.parse(dados);
+
     return Array.isArray(resultado)
       ? (resultado as PedidoMercado[])
       : [];
@@ -210,7 +209,9 @@ function textoEstado(estado: EstadoPedido): string {
 function formatarData(data: string): string {
   const valor = new Date(data);
 
-  if (Number.isNaN(valor.getTime())) return "Data indisponível";
+  if (Number.isNaN(valor.getTime())) {
+    return "Data indisponível";
+  }
 
   return valor.toLocaleString("pt-MZ", {
     dateStyle: "medium",
@@ -233,7 +234,6 @@ export default function MercadosPage() {
   const [contaAtual, setContaAtual] = useState<ContaLocal | null>(null);
   const [carregouConta, setCarregouConta] = useState(false);
 
-  const [pesquisa, setPesquisa] = useState("");
   const [seleccionado, setSeleccionado] =
     useState<ServicoMercado | null>(null);
 
@@ -264,16 +264,6 @@ export default function MercadosPage() {
     setContaAtual(obterContaAtual());
     setCarregouConta(true);
   }, []);
-
-  const filtrados = servicos.filter((servico) => {
-    const termo = pesquisa.trim().toLocaleLowerCase("pt");
-
-    return (
-      servico.titulo.toLocaleLowerCase("pt").includes(termo) ||
-      servico.descricao.toLocaleLowerCase("pt").includes(termo) ||
-      servico.detalhe.toLocaleLowerCase("pt").includes(termo)
-    );
-  });
 
   const carteiras = contaAtual?.carteiras ?? [];
 
@@ -341,10 +331,7 @@ export default function MercadosPage() {
       return;
     }
 
-    if (
-      seleccionado.id === "taxa" &&
-      !periodo.trim()
-    ) {
+    if (seleccionado.id === "taxa" && !periodo.trim()) {
       setTipoMensagem("erro");
       setMensagem("Indique o período a que a taxa diz respeito.");
       return;
@@ -558,10 +545,7 @@ export default function MercadosPage() {
               </p>
 
               <div className="mt-5 rounded-xl border border-slate-200 p-4">
-                <p className="text-xs text-slate-500">
-                  Número do pedido
-                </p>
-
+                <p className="text-xs text-slate-500">Número do pedido</p>
                 <p className="mt-1 break-all text-lg font-bold text-slate-900">
                   {ultimoPedido.id}
                 </p>
@@ -571,7 +555,6 @@ export default function MercadosPage() {
                     size={19}
                     className="mt-0.5 shrink-0 text-amber-600"
                   />
-
                   <div>
                     <p className="text-sm font-semibold text-slate-800">
                       {textoEstado(ultimoPedido.estado)}
@@ -584,9 +567,7 @@ export default function MercadosPage() {
               </div>
 
               <div className="mt-4 rounded-xl bg-slate-50 p-4">
-                <p className="text-xs text-slate-500">
-                  Titular do pedido
-                </p>
+                <p className="text-xs text-slate-500">Titular do pedido</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">
                   {ultimoPedido.titularNome}
                 </p>
@@ -597,16 +578,12 @@ export default function MercadosPage() {
                   {ultimoPedido.titularTelefone}
                 </p>
 
-                <p className="mt-4 text-xs text-slate-500">
-                  Serviço
-                </p>
+                <p className="mt-4 text-xs text-slate-500">Serviço</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">
                   {ultimoPedido.servico}
                 </p>
 
-                <p className="mt-3 text-xs text-slate-500">
-                  Mercado
-                </p>
+                <p className="mt-3 text-xs text-slate-500">Mercado</p>
                 <p className="mt-1 text-sm text-slate-800">
                   {ultimoPedido.mercado}
                 </p>
@@ -614,17 +591,14 @@ export default function MercadosPage() {
 
               {ultimoPedido.valorTaxa && (
                 <div className="mt-4 rounded-xl border border-slate-200 p-4">
-                  <p className="text-xs text-slate-500">
-                    Valor indicado
-                  </p>
+                  <p className="text-xs text-slate-500">Valor indicado</p>
                   <p className="mt-1 text-lg font-bold text-slate-900">
                     {formatarValor(ultimoPedido.valorTaxa)} MT
                   </p>
 
                   {ultimoPedido.referenciaMunicipal && (
                     <p className="mt-3 break-all text-xs text-slate-600">
-                      Referência municipal:{" "}
-                      {ultimoPedido.referenciaMunicipal}
+                      Referência municipal: {ultimoPedido.referenciaMunicipal}
                     </p>
                   )}
 
@@ -693,10 +667,7 @@ export default function MercadosPage() {
 
             {pedidos.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
-                <FileText
-                  size={30}
-                  className="mx-auto text-slate-400"
-                />
+                <FileText size={30} className="mx-auto text-slate-400" />
                 <p className="mt-3 text-sm font-semibold text-slate-800">
                   Ainda não existem pedidos
                 </p>
@@ -783,10 +754,7 @@ export default function MercadosPage() {
             >
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <div className="mb-3 flex items-center gap-2">
-                  <ShieldCheck
-                    size={19}
-                    className="text-emerald-700"
-                  />
+                  <ShieldCheck size={19} className="text-emerald-700" />
                   <h3 className="text-sm font-bold text-slate-900">
                     Dados do titular registado
                   </h3>
@@ -1045,10 +1013,7 @@ export default function MercadosPage() {
 
                   <div className="border-t border-slate-100 pt-4">
                     <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
-                      <CreditCard
-                        size={18}
-                        className="text-emerald-700"
-                      />
+                      <CreditCard size={18} className="text-emerald-700" />
                       Carteiras móveis do cadastro
                     </h3>
                     <p className="mt-1 text-xs leading-5 text-slate-500">
@@ -1300,7 +1265,7 @@ export default function MercadosPage() {
             <button
               type="button"
               onClick={abrirListaPedidos}
-              className="mb-4 flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-emerald-300"
+              className="mb-5 flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-emerald-300"
             >
               <span className="flex items-center gap-3">
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
@@ -1318,40 +1283,17 @@ export default function MercadosPage() {
               <ArrowRight size={18} className="text-slate-400" />
             </button>
 
-            <label className="mb-4 flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 focus-within:border-emerald-600">
-              <Search size={19} className="shrink-0 text-slate-400" />
-              <input
-                type="search"
-                value={pesquisa}
-                onChange={(event) => setPesquisa(event.target.value)}
-                placeholder="Pesquisar serviço..."
-                className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-                aria-label="Pesquisar serviço dos mercados"
-              />
-
-              {pesquisa && (
-                <button
-                  type="button"
-                  onClick={() => setPesquisa("")}
-                  aria-label="Limpar pesquisa"
-                  className="text-slate-400 hover:text-slate-700"
-                >
-                  <X size={18} />
-                </button>
-              )}
-            </label>
-
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-800">
                 Serviços disponíveis
               </h3>
               <span className="text-xs text-slate-500">
-                {filtrados.length} serviços
+                {servicos.length} serviços
               </span>
             </div>
 
             <section className="grid grid-cols-3 gap-2 sm:gap-3">
-              {filtrados.map((servico) => {
+              {servicos.map((servico) => {
                 const Icon = servico.icon;
 
                 return (
@@ -1382,21 +1324,6 @@ export default function MercadosPage() {
                   </button>
                 );
               })}
-
-              {filtrados.length === 0 && (
-                <div className="col-span-3 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center">
-                  <Search
-                    size={28}
-                    className="mx-auto text-slate-400"
-                  />
-                  <p className="mt-3 text-sm font-semibold text-slate-800">
-                    Nenhum serviço encontrado
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Experimente outro termo de pesquisa.
-                  </p>
-                </div>
-              )}
             </section>
 
             <section className="relative mt-6 overflow-hidden rounded-2xl bg-emerald-950 p-5 text-white">

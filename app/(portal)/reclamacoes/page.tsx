@@ -1,778 +1,625 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import {
   AlertCircle,
-  ArrowLeft,
-  CalendarDays,
+  ArrowRight,
   CheckCircle2,
-  ChevronRight,
-  Clock3,
+  Clock,
   FileText,
-  Filter,
-  Headphones,
-  MapPin,
-  MessageSquare,
-  Plus,
-  Search,
+  MessageSquareText,
   Send,
   ShieldCheck,
-  X,
+  UserRound,
 } from "lucide-react";
 
-type EstadoReclamacao =
-  | "Recebida"
-  | "Em análise"
-  | "Resolvida"
-  | "Rejeitada";
+type EstadoReclamacao = "Em análise" | "Em tratamento" | "Resolvida";
 
 type Reclamacao = {
   id: string;
-  titulo: string;
-  categoria: string;
+  referencia: string;
+  assunto: string;
+  servico: string;
   descricao: string;
-  local: string;
+  nome: string;
+  contacto: string;
   data: string;
   estado: EstadoReclamacao;
-  protocolo: string;
-  resposta?: string;
 };
 
-const reclamacoesIniciais: Reclamacao[] = [
-  {
-    id: "1",
-    titulo: "Acumulação de lixo na via pública",
-    categoria: "Saneamento",
-    descricao:
-      "Existe acumulação de resíduos junto à estrada, causando mau cheiro e dificultando a circulação dos peões.",
-    local: "Centro de Namaacha",
-    data: "12/10/2026",
-    estado: "Em análise",
-    protocolo: "REC-2026-001",
-    resposta:
-      "A reclamação foi encaminhada para análise do setor responsável.",
-  },
-  {
-    id: "2",
-    titulo: "Iluminação pública avariada",
-    categoria: "Iluminação pública",
-    descricao:
-      "Os candeeiros da rua encontram-se apagados durante a noite.",
-    local: "Bairro da Vila",
-    data: "09/10/2026",
-    estado: "Recebida",
-    protocolo: "REC-2026-002",
-  },
-  {
-    id: "3",
-    titulo: "Problema no escoamento de águas",
-    categoria: "Infraestruturas",
-    descricao:
-      "A água acumula-se na via sempre que chove, dificultando a passagem de pessoas e veículos.",
-    local: "Zona residencial",
-    data: "05/10/2026",
-    estado: "Resolvida",
-    protocolo: "REC-2026-003",
-    resposta:
-      "O caso foi marcado como resolvido no registo demonstrativo.",
-  },
+const CHAVE_RECLAMACOES = "namaacha_reclamacoes";
+
+const servicosMunicipais = [
+  "Impostos e Taxas",
+  "Pagamentos",
+  "Licenças",
+  "Mercados",
+  "Construção",
+  "Publicidade",
+  "Transporte",
+  "Multas",
+  "Limpeza e Saneamento",
+  "Abastecimento de Água",
+  "Atendimento Municipal",
+  "Outro serviço",
 ];
 
-const estados: EstadoReclamacao[] = [
-  "Recebida",
-  "Em análise",
-  "Resolvida",
-  "Rejeitada",
-];
+function gerarReferencia() {
+  const ano = new Date().getFullYear();
+  const numero = Math.random().toString(36).slice(2, 8).toUpperCase();
 
-const categorias = [
-  "Saneamento",
-  "Iluminação pública",
-  "Infraestruturas",
-  "Abastecimento de água",
-  "Espaços públicos",
-  "Atendimento municipal",
-  "Outra",
-];
-
-function estiloEstado(estado: EstadoReclamacao) {
-  switch (estado) {
-    case "Recebida":
-      return "bg-blue-50 text-blue-700 border-blue-100";
-    case "Em análise":
-      return "bg-amber-50 text-amber-700 border-amber-100";
-    case "Resolvida":
-      return "bg-emerald-50 text-emerald-700 border-emerald-100";
-    case "Rejeitada":
-      return "bg-red-50 text-red-700 border-red-100";
-  }
+  return `REC-${ano}-${numero}`;
 }
 
-function IconeEstado({ estado }: { estado: EstadoReclamacao }) {
-  if (estado === "Resolvida") {
-    return <CheckCircle2 size={15} />;
-  }
+function formatarData(data: string) {
+  return new Intl.DateTimeFormat("pt-MZ", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(data));
+}
 
-  if (estado === "Em análise") {
-    return <Clock3 size={15} />;
+function obterEstadoVisual(estado: EstadoReclamacao) {
+  switch (estado) {
+    case "Resolvida":
+      return {
+        classe: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+        icone: CheckCircle2,
+      };
+    case "Em tratamento":
+      return {
+        classe: "bg-blue-50 text-blue-700 ring-blue-200",
+        icone: Clock,
+      };
+    default:
+      return {
+        classe: "bg-amber-50 text-amber-700 ring-amber-200",
+        icone: Clock,
+      };
   }
-
-  if (estado === "Rejeitada") {
-    return <AlertCircle size={15} />;
-  }
-
-  return <FileText size={15} />;
 }
 
 export default function ReclamacoesPage() {
-  const [reclamacoes, setReclamacoes] =
-    useState<Reclamacao[]>(reclamacoesIniciais);
-
-  const [vista, setVista] = useState<"lista" | "nova" | "detalhe">(
-    "lista",
+  const [reclamacoes, setReclamacoes] = useState<Reclamacao[]>([]);
+  const [carregado, setCarregado] = useState(false);
+  const [aEnviar, setAEnviar] = useState(false);
+  const [mensagem, setMensagem] = useState("");
+  const [tipoMensagem, setTipoMensagem] = useState<"sucesso" | "erro">(
+    "sucesso"
   );
 
-  const [reclamacaoSelecionada, setReclamacaoSelecionada] =
-    useState<Reclamacao | null>(null);
+  const [formulario, setFormulario] = useState({
+    nome: "",
+    contacto: "",
+    assunto: "",
+    servico: "",
+    descricao: "",
+  });
 
-  const [pesquisa, setPesquisa] = useState("");
-  const [filtroEstado, setFiltroEstado] = useState("Todas");
-  const [mostrarFiltros, setMostrarFiltros] = useState(false);
+  useEffect(() => {
+    try {
+      const dados = localStorage.getItem(CHAVE_RECLAMACOES);
 
-  const [titulo, setTitulo] = useState("");
-  const [categoria, setCategoria] = useState("Saneamento");
-  const [descricao, setDescricao] = useState("");
-  const [local, setLocal] = useState("");
-  const [contacto, setContacto] = useState("");
-  const [mensagem, setMensagem] = useState("");
+      if (dados) {
+        const lista: unknown = JSON.parse(dados);
 
-  const totalRecebidas = reclamacoes.filter(
-    (r) => r.estado === "Recebida",
-  ).length;
+        if (Array.isArray(lista)) {
+          setReclamacoes(lista as Reclamacao[]);
+        }
+      }
+    } catch {
+      setReclamacoes([]);
+    } finally {
+      setCarregado(true);
+    }
+  }, []);
 
-  const totalEmAnalise = reclamacoes.filter(
-    (r) => r.estado === "Em análise",
-  ).length;
-
-  const totalResolvidas = reclamacoes.filter(
-    (r) => r.estado === "Resolvida",
-  ).length;
-
-  const reclamacoesFiltradas = useMemo(() => {
-    const termo = pesquisa.toLowerCase().trim();
-
-    return reclamacoes.filter((r) => {
-      const correspondePesquisa =
-        !termo ||
-        r.titulo.toLowerCase().includes(termo) ||
-        r.protocolo.toLowerCase().includes(termo) ||
-        r.categoria.toLowerCase().includes(termo) ||
-        r.local.toLowerCase().includes(termo);
-
-      const correspondeEstado =
-        filtroEstado === "Todas" || r.estado === filtroEstado;
-
-      return correspondePesquisa && correspondeEstado;
-    });
-  }, [reclamacoes, pesquisa, filtroEstado]);
-
-  function abrirDetalhe(reclamacao: Reclamacao) {
-    setReclamacaoSelecionada(reclamacao);
-    setVista("detalhe");
-    setMensagem("");
+  function atualizarCampo(
+    campo: keyof typeof formulario,
+    valor: string
+  ) {
+    setFormulario((anterior) => ({
+      ...anterior,
+      [campo]: valor,
+    }));
   }
 
-  function voltarLista() {
-    setVista("lista");
-    setReclamacaoSelecionada(null);
-    setMensagem("");
+  function mostrarMensagem(
+    texto: string,
+    tipo: "sucesso" | "erro"
+  ) {
+    setMensagem(texto);
+    setTipoMensagem(tipo);
   }
 
-  function submeterReclamacao(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function submeterReclamacao(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    setMensagem("");
 
-    if (!titulo.trim() || !descricao.trim() || !local.trim()) {
-      setMensagem("Preencha todos os campos obrigatórios.");
+    const nome = formulario.nome.trim();
+    const contacto = formulario.contacto.trim();
+    const assunto = formulario.assunto.trim();
+    const descricao = formulario.descricao.trim();
+
+    if (
+      !nome ||
+      !contacto ||
+      !assunto ||
+      !formulario.servico ||
+      !descricao
+    ) {
+      mostrarMensagem(
+        "Preencha todos os campos obrigatórios antes de submeter.",
+        "erro"
+      );
       return;
     }
 
-    const novaReclamacao: Reclamacao = {
-      id: String(Date.now()),
-      titulo: titulo.trim(),
-      categoria,
-      descricao: descricao.trim(),
-      local: local.trim(),
-      data: new Date().toLocaleDateString("pt-PT"),
-      estado: "Recebida",
-      protocolo: `REC-DEMO-${Date.now().toString().slice(-6)}`,
-    };
+    if (nome.length < 3) {
+      mostrarMensagem("Introduza o seu nome completo.", "erro");
+      return;
+    }
 
-    setReclamacoes((atuais) => [novaReclamacao, ...atuais]);
-    setReclamacaoSelecionada(novaReclamacao);
-    setTitulo("");
-    setCategoria("Saneamento");
-    setDescricao("");
-    setLocal("");
-    setContacto("");
-    setMensagem("");
-    setVista("detalhe");
+    if (descricao.length < 15) {
+      mostrarMensagem(
+        "A descrição deve conter pelo menos 15 caracteres.",
+        "erro"
+      );
+      return;
+    }
+
+    setAEnviar(true);
+
+    try {
+      const novaReclamacao: Reclamacao = {
+        id: crypto.randomUUID(),
+        referencia: gerarReferencia(),
+        assunto,
+        servico: formulario.servico,
+        descricao,
+        nome,
+        contacto,
+        data: new Date().toISOString(),
+        estado: "Em análise",
+      };
+
+      const atualizadas = [novaReclamacao, ...reclamacoes];
+
+      localStorage.setItem(
+        CHAVE_RECLAMACOES,
+        JSON.stringify(atualizadas)
+      );
+
+      setReclamacoes(atualizadas);
+
+      setFormulario({
+        nome: "",
+        contacto: "",
+        assunto: "",
+        servico: "",
+        descricao: "",
+      });
+
+      mostrarMensagem(
+        `Reclamação submetida com sucesso. Referência: ${novaReclamacao.referencia}`,
+        "sucesso"
+      );
+    } catch {
+      mostrarMensagem(
+        "Não foi possível guardar a reclamação neste navegador. Tente novamente.",
+        "erro"
+      );
+    } finally {
+      setAEnviar(false);
+    }
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 pb-10 text-slate-800">
-      <div className="mx-auto max-w-5xl px-4 py-5 sm:px-6 sm:py-8">
+    <main className="min-h-screen bg-slate-50/80 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-8">
         {/* Cabeçalho */}
-        <header className="mb-6 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            {vista !== "lista" && (
-              <button
-                type="button"
-                onClick={voltarLista}
-                aria-label="Voltar à lista"
-                className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100"
-              >
-                <ArrowLeft size={19} />
-              </button>
-            )}
+        <section className="relative overflow-hidden rounded-3xl bg-emerald-950 px-6 py-8 text-white shadow-sm sm:px-9 sm:py-10">
+          <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-emerald-700/30 blur-3xl" />
 
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-100 text-orange-700">
-              <MessageSquare size={25} />
-            </div>
+          <div className="relative z-10 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <div className="max-w-2xl">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-medium text-emerald-100">
+                <MessageSquareText size={15} />
+                Atendimento ao munícipe
+              </div>
 
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-orange-700">
-                Município de Namaacha
-              </p>
-              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-                Reclamações
+              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl lg:text-4xl">
+                Reclamações e Sugestões
               </h1>
-            </div>
-          </div>
 
-          {vista === "lista" && (
-            <button
-              type="button"
-              onClick={() => {
-                setVista("nova");
-                setMensagem("");
-              }}
-              className="flex shrink-0 items-center gap-2 rounded-xl bg-orange-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-700 sm:px-4"
-            >
-              <Plus size={18} />
-              <span className="hidden sm:inline">Nova reclamação</span>
-              <span className="sm:hidden">Nova</span>
-            </button>
-          )}
-        </header>
-
-        {/* Aviso demonstrativo */}
-        <div className="mb-6 flex gap-3 rounded-2xl border border-orange-200 bg-orange-50 p-4">
-          <ShieldCheck className="mt-0.5 shrink-0 text-orange-700" size={21} />
-          <div>
-            <p className="text-sm font-semibold text-orange-900">
-              Portal de atendimento municipal
-            </p>
-            <p className="mt-1 text-sm leading-5 text-orange-800">
-              Esta é uma demonstração. As reclamações registadas nesta página
-              ficam apenas no estado local da aplicação e não são enviadas ao
-              Município.
-            </p>
-          </div>
-        </div>
-
-        {/* Lista */}
-        {vista === "lista" && (
-          <>
-            <section className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between">
-                  <span className="text-sm text-slate-500">Recebidas</span>
-                  <span className="rounded-xl bg-blue-50 p-2 text-blue-700">
-                    <FileText size={19} />
-                  </span>
-                </div>
-                <p className="text-3xl font-bold">{totalRecebidas}</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Aguardam encaminhamento
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between">
-                  <span className="text-sm text-slate-500">Em análise</span>
-                  <span className="rounded-xl bg-amber-50 p-2 text-amber-700">
-                    <Clock3 size={19} />
-                  </span>
-                </div>
-                <p className="text-3xl font-bold">{totalEmAnalise}</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Em acompanhamento
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between">
-                  <span className="text-sm text-slate-500">Resolvidas</span>
-                  <span className="rounded-xl bg-emerald-50 p-2 text-emerald-700">
-                    <CheckCircle2 size={19} />
-                  </span>
-                </div>
-                <p className="text-3xl font-bold">{totalResolvidas}</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Marcadas como concluídas
-                </p>
-              </div>
-            </section>
-
-            {/* Pesquisa e filtros */}
-            <section className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <div className="relative flex-1">
-                  <Search
-                    size={19}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                  />
-                  <input
-                    type="search"
-                    value={pesquisa}
-                    onChange={(e) => setPesquisa(e.target.value)}
-                    placeholder="Pesquisar por título, protocolo ou local..."
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-sm outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setMostrarFiltros((atual) => !atual)}
-                  className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  <Filter size={17} />
-                  Filtrar
-                </button>
-              </div>
-
-              {mostrarFiltros && (
-                <div className="mt-4 border-t border-slate-100 pt-4">
-                  <label
-                    htmlFor="filtro-estado"
-                    className="mb-2 block text-sm font-medium text-slate-700"
-                  >
-                    Estado da reclamação
-                  </label>
-                  <select
-                    id="filtro-estado"
-                    value={filtroEstado}
-                    onChange={(e) => setFiltroEstado(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-orange-400 sm:max-w-xs"
-                  >
-                    <option value="Todas">Todos os estados</option>
-                    {estados.map((estado) => (
-                      <option key={estado} value={estado}>
-                        {estado}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </section>
-
-            {/* Registos */}
-            <section>
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="font-bold text-slate-900">
-                  Minhas reclamações
-                </h2>
-                <span className="text-sm text-slate-500">
-                  {reclamacoesFiltradas.length} registo(s)
-                </span>
-              </div>
-
-              {reclamacoesFiltradas.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center">
-                  <Search className="mx-auto mb-3 text-slate-400" size={32} />
-                  <p className="font-semibold text-slate-800">
-                    Nenhuma reclamação encontrada
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Experimente alterar a pesquisa ou o filtro.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {reclamacoesFiltradas.map((reclamacao) => (
-                    <button
-                      type="button"
-                      key={reclamacao.id}
-                      onClick={() => abrirDetalhe(reclamacao)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-orange-300 hover:shadow-md sm:p-5"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 gap-3">
-                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                            <FileText size={21} />
-                          </div>
-
-                          <div className="min-w-0">
-                            <h3 className="font-semibold leading-5 text-slate-900">
-                              {reclamacao.titulo}
-                            </h3>
-                            <p className="mt-1 text-xs text-slate-500">
-                              {reclamacao.protocolo}
-                            </p>
-                          </div>
-                        </div>
-
-                        <ChevronRight
-                          size={20}
-                          className="mt-1 shrink-0 text-slate-400"
-                        />
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap items-center gap-2">
-                        <span
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${estiloEstado(
-                            reclamacao.estado,
-                          )}`}
-                        >
-                          <IconeEstado estado={reclamacao.estado} />
-                          {reclamacao.estado}
-                        </span>
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
-                          {reclamacao.categoria}
-                        </span>
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-500">
-                        <span className="flex items-center gap-1.5">
-                          <CalendarDays size={14} />
-                          {reclamacao.data}
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <MapPin size={14} />
-                          {reclamacao.local}
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          </>
-        )}
-
-        {/* Formulário de nova reclamação */}
-        {vista === "nova" && (
-          <section className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-            <div className="mb-6">
-              <h2 className="text-xl font-bold text-slate-900">
-                Registar reclamação
-              </h2>
-              <p className="mt-1 text-sm leading-5 text-slate-500">
-                Descreva o problema e indique o local onde ocorre.
+              <p className="mt-3 max-w-xl text-sm leading-7 text-emerald-50/80 sm:text-base">
+                Partilhe a sua preocupação ou sugestão. A sua participação
+                contribui para melhorar os serviços do Município da Namaacha.
               </p>
             </div>
 
-            <form onSubmit={submeterReclamacao} className="space-y-5">
-              <div>
-                <label
-                  htmlFor="titulo"
-                  className="mb-2 block text-sm font-semibold"
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center self-start rounded-2xl border border-white/15 bg-white/10 md:self-center">
+              <MessageSquareText size={38} strokeWidth={1.5} />
+            </div>
+          </div>
+        </section>
+
+        {/* Formulário e orientação */}
+        <section className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+          <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-6 py-5 sm:px-8">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                  <Send size={21} />
+                </div>
+
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Apresentar reclamação
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Preencha os dados abaixo para registar a sua participação.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <form
+              onSubmit={submeterReclamacao}
+              className="space-y-5 px-6 py-6 sm:px-8"
+            >
+              {mensagem && (
+                <div
+                  role="alert"
+                  className={`flex items-start gap-3 rounded-xl border p-4 text-sm leading-6 ${
+                    tipoMensagem === "sucesso"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : "border-red-200 bg-red-50 text-red-700"
+                  }`}
                 >
-                  Assunto <span className="text-red-500">*</span>
-                </label>
-                <input
-                  id="titulo"
-                  required
-                  value={titulo}
-                  onChange={(e) => setTitulo(e.target.value)}
-                  maxLength={100}
-                  placeholder="Ex.: Lixo acumulado na rua"
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                />
+                  {tipoMensagem === "sucesso" ? (
+                    <CheckCircle2
+                      className="mt-0.5 shrink-0"
+                      size={19}
+                    />
+                  ) : (
+                    <AlertCircle
+                      className="mt-0.5 shrink-0"
+                      size={19}
+                    />
+                  )}
+                  <p>{mensagem}</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <label
+                    htmlFor="nome"
+                    className="block text-sm font-semibold text-slate-700"
+                  >
+                    Nome completo <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    id="nome"
+                    type="text"
+                    autoComplete="name"
+                    value={formulario.nome}
+                    onChange={(e) => atualizarCampo("nome", e.target.value)}
+                    placeholder="Introduza o seu nome"
+                    maxLength={120}
+                    required
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-50"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label
+                    htmlFor="contacto"
+                    className="block text-sm font-semibold text-slate-700"
+                  >
+                    Contacto telefónico{" "}
+                    <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    id="contacto"
+                    type="tel"
+                    autoComplete="tel"
+                    value={formulario.contacto}
+                    onChange={(e) =>
+                      atualizarCampo("contacto", e.target.value)
+                    }
+                    placeholder="Ex.: 84 123 4567"
+                    maxLength={30}
+                    required
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-50"
+                  />
+                </div>
               </div>
 
-              <div>
+              <div className="space-y-2">
                 <label
-                  htmlFor="categoria"
-                  className="mb-2 block text-sm font-semibold"
+                  htmlFor="servico"
+                  className="block text-sm font-semibold text-slate-700"
                 >
-                  Categoria <span className="text-red-500">*</span>
+                  Serviço municipal{" "}
+                  <span className="text-red-500">*</span>
                 </label>
                 <select
-                  id="categoria"
+                  id="servico"
+                  value={formulario.servico}
+                  onChange={(e) =>
+                    atualizarCampo("servico", e.target.value)
+                  }
                   required
-                  value={categoria}
-                  onChange={(e) => setCategoria(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm outline-none focus:border-orange-400"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-50"
                 >
-                  {categorias.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
+                  <option value="">Seleccione o serviço relacionado</option>
+                  {servicosMunicipais.map((servico) => (
+                    <option key={servico} value={servico}>
+                      {servico}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div>
+              <div className="space-y-2">
                 <label
-                  htmlFor="local"
-                  className="mb-2 block text-sm font-semibold"
+                  htmlFor="assunto"
+                  className="block text-sm font-semibold text-slate-700"
                 >
-                  Local da ocorrência{" "}
-                  <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <MapPin
-                    size={18}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                  />
-                  <input
-                    id="local"
-                    required
-                    value={local}
-                    onChange={(e) => setLocal(e.target.value)}
-                    maxLength={150}
-                    placeholder="Bairro, rua ou ponto de referência"
-                    className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-3 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="descricao"
-                  className="mb-2 block text-sm font-semibold"
-                >
-                  Descrição detalhada{" "}
-                  <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  id="descricao"
-                  required
-                  value={descricao}
-                  onChange={(e) => setDescricao(e.target.value)}
-                  minLength={10}
-                  maxLength={1500}
-                  rows={5}
-                  placeholder="Explique o problema, quando começou e como afeta a comunidade..."
-                  className="w-full resize-y rounded-xl border border-slate-200 px-3.5 py-3 text-sm leading-6 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                />
-                <p className="mt-1 text-right text-xs text-slate-400">
-                  {descricao.length}/1500 caracteres
-                </p>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="contacto"
-                  className="mb-2 block text-sm font-semibold"
-                >
-                  Contacto telefónico (opcional)
+                  Assunto <span className="text-red-500">*</span>
                 </label>
                 <input
-                  id="contacto"
-                  type="tel"
-                  value={contacto}
-                  onChange={(e) => setContacto(e.target.value)}
-                  maxLength={30}
-                  placeholder="Ex.: 84 000 0000"
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm outline-none focus:border-orange-400"
+                  id="assunto"
+                  type="text"
+                  value={formulario.assunto}
+                  onChange={(e) =>
+                    atualizarCampo("assunto", e.target.value)
+                  }
+                  placeholder="Resuma o motivo da reclamação"
+                  maxLength={150}
+                  required
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-50"
                 />
-                <p className="mt-1 text-xs text-slate-500">
-                  Nesta demonstração, o contacto não é enviado nem guardado
-                  num servidor.
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <label
+                    htmlFor="descricao"
+                    className="block text-sm font-semibold text-slate-700"
+                  >
+                    Descrição detalhada{" "}
+                    <span className="text-red-500">*</span>
+                  </label>
+                  <span className="text-xs text-slate-400">
+                    {formulario.descricao.length}/2000
+                  </span>
+                </div>
+
+                <textarea
+                  id="descricao"
+                  value={formulario.descricao}
+                  onChange={(e) =>
+                    atualizarCampo("descricao", e.target.value)
+                  }
+                  placeholder="Descreva a situação e os detalhes relevantes para a análise da sua reclamação..."
+                  rows={6}
+                  maxLength={2000}
+                  minLength={15}
+                  required
+                  className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-50"
+                />
+
+                <p className="text-xs leading-5 text-slate-500">
+                  Inclua informações que ajudem o Município a compreender a
+                  situação.
                 </p>
               </div>
 
-              {mensagem && (
-                <p
-                  role="alert"
-                  className="rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-700"
-                >
-                  {mensagem}
-                </p>
-              )}
+              <button
+                type="submit"
+                disabled={aEnviar}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 focus:outline-none focus:ring-4 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {aEnviar ? (
+                  <>
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                    A submeter...
+                  </>
+                ) : (
+                  <>
+                    Submeter reclamação
+                    <ArrowRight size={18} />
+                  </>
+                )}
+              </button>
 
-              <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  onClick={voltarLista}
-                  className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                >
-                  Cancelar
-                </button>
-
-                <button
-                  type="submit"
-                  className="flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-orange-700"
-                >
-                  <Send size={17} />
-                  Registar reclamação
-                </button>
-              </div>
+              <p className="text-center text-xs leading-5 text-slate-500">
+                Os campos assinalados com{" "}
+                <span className="font-semibold text-red-500">*</span> são
+                obrigatórios.
+              </p>
             </form>
-          </section>
-        )}
+          </div>
 
-        {/* Detalhes da reclamação */}
-        {vista === "detalhe" && reclamacaoSelecionada && (
-          <section className="mx-auto max-w-3xl space-y-5">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Protocolo de acompanhamento
-                </span>
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${estiloEstado(
-                    reclamacaoSelecionada.estado,
-                  )}`}
-                >
-                  <IconeEstado estado={reclamacaoSelecionada.estado} />
-                  {reclamacaoSelecionada.estado}
-                </span>
+          {/* Orientação */}
+          <aside className="space-y-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+                  <ShieldCheck size={23} />
+                </div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Como funciona?
+                </h2>
               </div>
 
-              <p className="mt-2 break-all text-sm font-bold text-orange-700">
-                {reclamacaoSelecionada.protocolo}
-              </p>
+              <div className="mt-6 space-y-6">
+                <div className="flex gap-4">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-800">
+                    1
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">
+                      Registe a reclamação
+                    </h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">
+                      Preencha o formulário com os seus dados e descreva a
+                      situação.
+                    </p>
+                  </div>
+                </div>
 
-              <h2 className="mt-4 text-xl font-bold leading-7 text-slate-900 sm:text-2xl">
-                {reclamacaoSelecionada.titulo}
-              </h2>
+                <div className="flex gap-4">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-800">
+                    2
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">
+                      Receba uma referência
+                    </h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">
+                      Será gerada uma referência para identificar o registo
+                      guardado.
+                    </p>
+                  </div>
+                </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600">
-                  {reclamacaoSelecionada.categoria}
-                </span>
-                <span className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600">
-                  <CalendarDays size={14} />
-                  {reclamacaoSelecionada.data}
-                </span>
+                <div className="flex gap-4">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-bold text-emerald-800">
+                    3
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">
+                      Consulte o histórico
+                    </h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">
+                      Os registos submetidos neste navegador aparecem no
+                      histórico abaixo.
+                    </p>
+                  </div>
+                </div>
               </div>
+            </div>
 
-              <div className="mt-6 border-t border-slate-100 pt-5">
-                <h3 className="mb-2 text-sm font-semibold text-slate-900">
-                  Descrição
-                </h3>
-                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">
-                  {reclamacaoSelecionada.descricao}
-                </p>
-              </div>
-
-              <div className="mt-5 flex items-start gap-3 rounded-xl bg-slate-50 p-4">
-                <MapPin className="mt-0.5 shrink-0 text-orange-600" size={19} />
+            <div className="rounded-3xl border border-emerald-100 bg-emerald-50/70 p-6 sm:p-7">
+              <div className="flex items-start gap-3">
+                <UserRound
+                  className="mt-0.5 shrink-0 text-emerald-700"
+                  size={22}
+                />
                 <div>
-                  <p className="text-xs font-medium text-slate-500">
-                    Local da ocorrência
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-800">
-                    {reclamacaoSelecionada.local}
+                  <h2 className="font-bold text-emerald-950">
+                    A sua participação importa
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-emerald-900/80">
+                    As reclamações e sugestões ajudam a identificar problemas
+                    e a melhorar a qualidade dos serviços municipais.
                   </p>
                 </div>
               </div>
-
-              {reclamacaoSelecionada.resposta && (
-                <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-4">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-blue-900">
-                    <Headphones size={18} />
-                    Informação de acompanhamento
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-blue-800">
-                    {reclamacaoSelecionada.resposta}
-                  </p>
-                </div>
-              )}
             </div>
+          </aside>
+        </section>
 
-            {/* Etapas ilustrativas */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-              <h3 className="font-bold text-slate-900">
-                Acompanhamento do processo
-              </h3>
+        {/* Histórico */}
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-slate-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">
+                Histórico de reclamações
+              </h2>
               <p className="mt-1 text-sm text-slate-500">
-                Etapas ilustrativas do tratamento da reclamação.
+                Consulte os registos submetidos neste navegador.
               </p>
-
-              <div className="mt-6 space-y-5">
-                {[
-                  {
-                    titulo: "Reclamação registada",
-                    descricao: "O registo foi criado na aplicação.",
-                    concluido: true,
-                  },
-                  {
-                    titulo: "Análise pelo setor responsável",
-                    descricao: "Verificação e encaminhamento da ocorrência.",
-                    concluido: [
-                      "Em análise",
-                      "Resolvida",
-                    ].includes(reclamacaoSelecionada.estado),
-                  },
-                  {
-                    titulo: "Resolução da ocorrência",
-                    descricao: "Conclusão do tratamento do caso.",
-                    concluido:
-                      reclamacaoSelecionada.estado === "Resolvida",
-                  },
-                ].map((etapa, index) => (
-                  <div key={etapa.titulo} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <div
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                          etapa.concluido
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-slate-100 text-slate-400"
-                        }`}
-                      >
-                        {etapa.concluido ? (
-                          <CheckCircle2 size={18} />
-                        ) : (
-                          <span className="text-xs font-bold">
-                            {index + 1}
-                          </span>
-                        )}
-                      </div>
-                      {index < 2 && (
-                        <div className="mt-1 h-7 w-0.5 bg-slate-200" />
-                      )}
-                    </div>
-
-                    <div className="pt-1">
-                      <p
-                        className={`text-sm font-semibold ${
-                          etapa.concluido
-                            ? "text-slate-900"
-                            : "text-slate-500"
-                        }`}
-                      >
-                        {etapa.titulo}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">
-                        {etapa.descricao}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
 
-            <button
-              type="button"
-              onClick={voltarLista}
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-            >
-              Voltar às reclamações
-            </button>
-          </section>
-        )}
+            <div className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-600">
+              <FileText size={16} />
+              {reclamacoes.length}{" "}
+              {reclamacoes.length === 1 ? "registo" : "registos"}
+            </div>
+          </div>
 
-        <footer className="mt-10 border-t border-slate-200 pt-5 text-center text-xs leading-5 text-slate-400">
-          Namaacha • Portal de Serviços Municipais
-          <br />
-          Demonstração de interface — sem ligação a um sistema oficial.
-        </footer>
+          {!carregado ? (
+            <div className="p-10 text-center text-sm text-slate-500">
+              A carregar histórico...
+            </div>
+          ) : reclamacoes.length === 0 ? (
+            <div className="px-6 py-14 text-center sm:px-8">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                <MessageSquareText size={30} />
+              </div>
+              <h3 className="mt-4 font-semibold text-slate-800">
+                Ainda não existem reclamações
+              </h3>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
+                Quando submeter uma reclamação, o registo será apresentado
+                aqui para consulta.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {reclamacoes.map((reclamacao) => {
+                const visual = obterEstadoVisual(reclamacao.estado);
+                const IconeEstado = visual.icone;
+
+                return (
+                  <article
+                    key={reclamacao.id}
+                    className="px-6 py-5 transition hover:bg-slate-50/70 sm:px-8"
+                  >
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-md bg-slate-100 px-2.5 py-1 font-mono text-xs font-semibold text-slate-600">
+                            {reclamacao.referencia}
+                          </span>
+                          <span className="text-xs text-slate-400">
+                            {formatarData(reclamacao.data)}
+                          </span>
+                        </div>
+
+                        <h3 className="mt-3 break-words font-semibold text-slate-900">
+                          {reclamacao.assunto}
+                        </h3>
+
+                        <p className="mt-1 text-sm text-emerald-700">
+                          {reclamacao.servico}
+                        </p>
+
+                        <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-slate-600">
+                          {reclamacao.descricao}
+                        </p>
+
+                        <p className="mt-3 text-xs text-slate-400">
+                          Submetida por {reclamacao.nome}
+                        </p>
+                      </div>
+
+                      <span
+                        className={`inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset ${visual.classe}`}
+                      >
+                        <IconeEstado size={14} />
+                        {reclamacao.estado}
+                      </span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <p className="pb-4 text-center text-xs leading-5 text-slate-400">
+          Município da Namaacha Digital · Plataforma de serviços municipais
+        </p>
       </div>
     </main>
   );

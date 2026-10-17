@@ -1,22 +1,28 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
+  AlertCircle,
   ArrowLeft,
   ArrowRight,
-  AlertTriangle,
+  Banknote,
   CheckCircle2,
-  ClipboardList,
-  FileText,
-  Search,
-  CreditCard,
-  ReceiptText,
   Clock,
+  CreditCard,
+  FileText,
+  History,
+  LoaderCircle,
+  MapPin,
+  MessageSquareWarning,
+  Search,
   ShieldCheck,
-  CircleDollarSign,
+  Smartphone,
+  Wallet,
   X,
 } from "lucide-react";
+import { obterContaAtual } from "@/lib/auth-local";
 
 type EstadoMulta = "Pendente" | "Paga" | "Em reclamação";
 
@@ -25,803 +31,1300 @@ type Multa = {
   referencia: string;
   tipo: string;
   descricao: string;
+  local: string;
   data: string;
   valor: number;
   estado: EstadoMulta;
-  entidade: string;
 };
 
-type ServicoMulta = {
+type MetodoPagamento =
+  | "M-Pesa"
+  | "e-Mola"
+  | "mKesh"
+  | "Pagamento presencial";
+
+type PedidoPagamento = {
   id: string;
-  titulo: string;
-  descricao: string;
-  detalhe: string;
-  passos: string[];
-  icon: typeof AlertTriangle;
-  cor: string;
-  fundo: string;
+  referenciaMulta: string;
+  metodo: MetodoPagamento;
+  numeroPagamento?: string;
+  valor: number;
+  data: string;
+  estado: "Pedido registado" | "Pagamento confirmado";
 };
 
-const multasIniciais: Multa[] = [
+type Reclamacao = {
+  id: string;
+  referenciaMulta: string;
+  motivo: string;
+  descricao: string;
+  data: string;
+  estado: "Submetida" | "Em análise" | "Respondida";
+};
+
+type Separador = "consultar" | "pagamento" | "historico" | "reclamacao";
+
+const CHAVE_MULTAS = "namaacha_multas";
+const CHAVE_PEDIDOS = "namaacha_pedidos_pagamento_multas";
+const CHAVE_RECLAMACOES = "namaacha_reclamacoes_multas";
+
+const METODOS: {
+  nome: MetodoPagamento;
+  descricao: string;
+  icon: typeof Smartphone;
+}[] = [
+  {
+    nome: "M-Pesa",
+    descricao: "Pagamento através da carteira M-Pesa",
+    icon: Smartphone,
+  },
+  {
+    nome: "e-Mola",
+    descricao: "Pagamento através da carteira e-Mola",
+    icon: Wallet,
+  },
+  {
+    nome: "mKesh",
+    descricao: "Pagamento através da carteira mKesh",
+    icon: CreditCard,
+  },
+  {
+    nome: "Pagamento presencial",
+    descricao: "Regularização presencial nos serviços municipais",
+    icon: Banknote,
+  },
+];
+
+const MULTAS_INICIAIS: Multa[] = [
   {
     id: "1",
     referencia: "DEMO-2026-001",
-    tipo: "Trânsito",
-    descricao: "Infração de trânsito demonstrativa",
-    data: "10/09/2026",
+    tipo: "Estacionamento",
+    descricao: "Estacionamento em local não autorizado",
+    local: "Namaacha, zona central",
+    data: "2026-09-12",
     valor: 1500,
     estado: "Pendente",
-    entidade: "Serviços de fiscalização",
   },
   {
     id: "2",
     referencia: "DEMO-2026-002",
-    tipo: "Postura municipal",
-    descricao: "Infração de postura municipal demonstrativa",
-    data: "22/08/2026",
-    valor: 800,
-    estado: "Paga",
-    entidade: "Fiscalização municipal",
+    tipo: "Publicidade",
+    descricao: "Publicidade sem licença municipal válida",
+    local: "Namaacha, avenida principal",
+    data: "2026-09-25",
+    valor: 2500,
+    estado: "Pendente",
   },
   {
     id: "3",
     referencia: "DEMO-2026-003",
-    tipo: "Actividade económica",
-    descricao: "Pendência administrativa demonstrativa",
-    data: "05/08/2026",
-    valor: 2500,
-    estado: "Em reclamação",
-    entidade: "Fiscalização municipal",
+    tipo: "Ocupação de espaço",
+    descricao: "Ocupação de espaço público sem autorização",
+    local: "Namaacha, zona do mercado",
+    data: "2026-10-02",
+    valor: 1000,
+    estado: "Pendente",
   },
 ];
 
-const servicos: ServicoMulta[] = [
-  {
-    id: "consultar",
-    titulo: "Consultar Multas",
-    descricao: "Verifique multas e pendências",
-    detalhe:
-      "Consulte os registos de multas associados ao seu perfil. Os dados de demonstração não representam notificações oficiais.",
-    passos: [
-      "Consulte a referência da multa.",
-      "Verifique a descrição e a data registada.",
-      "Confirme o valor e o estado do processo.",
-      "Contacte a entidade responsável caso existam divergências.",
-    ],
-    icon: Search,
-    cor: "text-rose-700",
-    fundo: "bg-rose-50",
-  },
-  {
-    id: "referencia",
-    titulo: "Emitir Referência",
-    descricao: "Prepare os dados para pagamento",
-    detalhe:
-      "Consulte os dados necessários para solicitar uma referência oficial de pagamento à entidade responsável.",
-    passos: [
-      "Seleccione a multa que pretende regularizar.",
-      "Confirme a referência e o valor junto da entidade emissora.",
-      "Solicite a emissão da referência oficial.",
-      "Pague apenas pelos canais oficialmente autorizados.",
-    ],
-    icon: ReceiptText,
-    cor: "text-amber-700",
-    fundo: "bg-amber-50",
-  },
-  {
-    id: "historico",
-    titulo: "Histórico de Pagamentos",
-    descricao: "Consulte os pagamentos registados",
-    detalhe:
-      "Consulte os registos demonstrativos de multas pagas e acompanhe a situação dos respectivos processos.",
-    passos: [
-      "Consulte os registos de pagamentos.",
-      "Verifique a referência associada.",
-      "Confirme a data e o valor do pagamento.",
-      "Guarde o comprovativo oficial para futuras consultas.",
-    ],
-    icon: ClipboardList,
-    cor: "text-violet-700",
-    fundo: "bg-violet-50",
-  },
-  {
-    id: "reclamacao",
-    titulo: "Reclamar uma Multa",
-    descricao: "Solicite a revisão de uma ocorrência",
-    detalhe:
-      "Prepare os dados de uma reclamação para apreciação pela entidade competente, seguindo os procedimentos e prazos aplicáveis.",
-    passos: [
-      "Identifique a multa ou a notificação.",
-      "Descreva os motivos da reclamação.",
-      "Reúna os documentos comprovativos necessários.",
-      "Submeta a reclamação através do canal oficial competente.",
-    ],
-    icon: FileText,
-    cor: "text-blue-700",
-    fundo: "bg-blue-50",
-  },
-];
+function lerLocalStorage<T>(chave: string, padrao: T): T {
+  if (typeof window === "undefined") return padrao;
+
+  try {
+    const dados = localStorage.getItem(chave);
+    return dados ? (JSON.parse(dados) as T) : padrao;
+  } catch {
+    return padrao;
+  }
+}
+
+function guardarLocalStorage<T>(chave: string, dados: T) {
+  if (typeof window === "undefined") return;
+
+  localStorage.setItem(chave, JSON.stringify(dados));
+}
 
 function formatarValor(valor: number) {
   return new Intl.NumberFormat("pt-MZ", {
-    minimumFractionDigits: 2,
+    style: "currency",
+    currency: "MZN",
     maximumFractionDigits: 2,
-  }).format(valor) + " MT";
+  }).format(valor);
 }
 
-function corEstado(estado: EstadoMulta) {
-  switch (estado) {
-    case "Paga":
-      return "bg-emerald-100 text-emerald-800";
-    case "Em reclamação":
-      return "bg-amber-100 text-amber-800";
-    default:
-      return "bg-rose-100 text-rose-800";
-  }
+function formatarData(data: string) {
+  const dataConvertida = new Date(data);
+
+  if (Number.isNaN(dataConvertida.getTime())) return data;
+
+  return new Intl.DateTimeFormat("pt-MZ", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(dataConvertida);
+}
+
+function gerarReferencia(prefixo: string) {
+  return `${prefixo}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 }
 
 export default function MultasPage() {
+  const router = useRouter();
+
+  const [carregado, setCarregado] = useState(false);
+  const [separador, setSeparador] = useState<Separador>("consultar");
+
+  const [multas, setMultas] = useState<Multa[]>([]);
+  const [pedidos, setPedidos] = useState<PedidoPagamento[]>([]);
+  const [reclamacoes, setReclamacoes] = useState<Reclamacao[]>([]);
+
   const [pesquisa, setPesquisa] = useState("");
-  const [filtro, setFiltro] = useState("Todas");
-  const [seleccionado, setSeleccionado] =
-    useState<ServicoMulta | null>(null);
-  const [multaSeleccionada, setMultaSeleccionada] =
-    useState<Multa | null>(null);
-  const [mostrarReclamacao, setMostrarReclamacao] = useState(false);
-  const [motivo, setMotivo] = useState("");
+  const [estadoFiltro, setEstadoFiltro] = useState("Todas");
+  const [multaSelecionada, setMultaSelecionada] = useState("");
+
+  const [metodoSelecionado, setMetodoSelecionado] =
+    useState<MetodoPagamento>("M-Pesa");
+  const [numeroPagamento, setNumeroPagamento] = useState("");
+  const [aRegistarPagamento, setARegistarPagamento] = useState(false);
+
+  const [motivoReclamacao, setMotivoReclamacao] = useState("");
+  const [descricaoReclamacao, setDescricaoReclamacao] = useState("");
+  const [aSubmeterReclamacao, setASubmeterReclamacao] = useState(false);
+
   const [mensagem, setMensagem] = useState("");
+  const [tipoMensagem, setTipoMensagem] = useState<"sucesso" | "erro">(
+    "sucesso"
+  );
 
-  const [multas] = useState<Multa[]>(multasIniciais);
+  useEffect(() => {
+    const conta = obterContaAtual();
 
-  const multasFiltradas = multas.filter((multa) => {
-    const termo = pesquisa.trim().toLocaleLowerCase("pt");
-
-    const correspondePesquisa =
-      multa.referencia.toLocaleLowerCase("pt").includes(termo) ||
-      multa.tipo.toLocaleLowerCase("pt").includes(termo) ||
-      multa.descricao.toLocaleLowerCase("pt").includes(termo);
-
-    const correspondeEstado =
-      filtro === "Todas" || multa.estado === filtro;
-
-    return correspondePesquisa && correspondeEstado;
-  });
-
-  const totalPendente = multas
-    .filter((multa) => multa.estado === "Pendente")
-    .reduce((total, multa) => total + multa.valor, 0);
-
-  const totalPago = multas
-    .filter((multa) => multa.estado === "Paga")
-    .reduce((total, multa) => total + multa.valor, 0);
-
-  const quantidadePendente = multas.filter(
-    (multa) => multa.estado === "Pendente"
-  ).length;
-
-  function voltar() {
-    if (mostrarReclamacao) {
-      setMostrarReclamacao(false);
-      setMensagem("");
-    } else if (multaSeleccionada) {
-      setMultaSeleccionada(null);
-      setMensagem("");
-    } else if (seleccionado) {
-      setSeleccionado(null);
-      setMensagem("");
-    } else {
-      window.history.back();
-    }
-  }
-
-  function abrirServico(servico: ServicoMulta) {
-    setSeleccionado(servico);
-    setMultaSeleccionada(null);
-    setMensagem("");
-    setMostrarReclamacao(false);
-  }
-
-  function abrirReclamacao(multa: Multa) {
-    setMultaSeleccionada(multa);
-    setMotivo("");
-    setMensagem("");
-    setMostrarReclamacao(true);
-  }
-
-  function validarReclamacao(
-    event: React.FormEvent<HTMLFormElement>
-  ) {
-    event.preventDefault();
-
-    if (!motivo.trim()) {
-      setMensagem("Descreva os motivos da reclamação.");
+    if (!conta) {
+      router.replace("/entrar");
       return;
     }
 
-    setMensagem(
-      "Os dados da reclamação foram validados localmente. A reclamação ainda não foi submetida oficialmente. É necessária a integração com o sistema da entidade responsável."
+    const multasGuardadas = lerLocalStorage<Multa[] | null>(
+      CHAVE_MULTAS,
+      null
+    );
+
+    const pedidosGuardados = lerLocalStorage<PedidoPagamento[]>(
+      CHAVE_PEDIDOS,
+      []
+    );
+
+    const reclamacoesGuardadas = lerLocalStorage<Reclamacao[]>(
+      CHAVE_RECLAMACOES,
+      []
+    );
+
+    if (multasGuardadas) {
+      setMultas(multasGuardadas);
+    } else {
+      setMultas(MULTAS_INICIAIS);
+      guardarLocalStorage(CHAVE_MULTAS, MULTAS_INICIAIS);
+    }
+
+    setPedidos(pedidosGuardados);
+    setReclamacoes(reclamacoesGuardadas);
+    setCarregado(true);
+  }, [router]);
+
+  function mostrarMensagem(
+    texto: string,
+    tipo: "sucesso" | "erro" = "sucesso"
+  ) {
+    setMensagem(texto);
+    setTipoMensagem(tipo);
+  }
+
+  const multasFiltradas = useMemo(() => {
+    const termo = pesquisa.trim().toLowerCase();
+
+    return multas.filter((multa) => {
+      const correspondePesquisa =
+        !termo ||
+        multa.referencia.toLowerCase().includes(termo) ||
+        multa.tipo.toLowerCase().includes(termo) ||
+        multa.descricao.toLowerCase().includes(termo);
+
+      const correspondeEstado =
+        estadoFiltro === "Todas" || multa.estado === estadoFiltro;
+
+      return correspondePesquisa && correspondeEstado;
+    });
+  }, [multas, pesquisa, estadoFiltro]);
+
+  const multaParaPagamento = multas.find(
+    (multa) => multa.referencia === multaSelecionada
+  );
+
+  const multasPendentes = multas.filter(
+    (multa) => multa.estado === "Pendente"
+  );
+
+  const valorPendente = multasPendentes.reduce(
+    (total, multa) => total + multa.valor,
+    0
+  );
+
+  function selecionarMultaParaPagamento(multa: Multa) {
+    setMultaSelecionada(multa.referencia);
+    setSeparador("pagamento");
+    setMensagem("");
+  }
+
+  function criarPedidoPagamento() {
+    if (!multaParaPagamento) {
+      mostrarMensagem(
+        "Seleccione uma multa pendente antes de continuar.",
+        "erro"
+      );
+      return;
+    }
+
+    if (multaParaPagamento.estado !== "Pendente") {
+      mostrarMensagem(
+        "Esta multa não está disponível para pagamento.",
+        "erro"
+      );
+      return;
+    }
+
+    if (
+      metodoSelecionado !== "Pagamento presencial" &&
+      !/^\d{9}$/.test(numeroPagamento)
+    ) {
+      mostrarMensagem(
+        "Introduza um número de telefone válido com 9 dígitos.",
+        "erro"
+      );
+      return;
+    }
+
+    setARegistarPagamento(true);
+    setMensagem("");
+
+    try {
+      const pedido: PedidoPagamento = {
+        id: gerarReferencia("PAG"),
+        referenciaMulta: multaParaPagamento.referencia,
+        metodo: metodoSelecionado,
+        numeroPagamento:
+          metodoSelecionado === "Pagamento presencial"
+            ? undefined
+            : `+258${numeroPagamento}`,
+        valor: multaParaPagamento.valor,
+        data: new Date().toISOString(),
+        estado: "Pedido registado",
+      };
+
+      const novosPedidos = [pedido, ...pedidos];
+
+      setPedidos(novosPedidos);
+      guardarLocalStorage(CHAVE_PEDIDOS, novosPedidos);
+
+      setNumeroPagamento("");
+      setSeparador("historico");
+
+      mostrarMensagem(
+        "Pedido registado. Consulte o histórico para acompanhar o estado."
+      );
+    } catch {
+      mostrarMensagem(
+        "Não foi possível registar o pedido. Tente novamente.",
+        "erro"
+      );
+    } finally {
+      setARegistarPagamento(false);
+    }
+  }
+
+  function submeterReclamacao() {
+    const multa = multas.find(
+      (item) => item.referencia === multaSelecionada
+    );
+
+    if (!multa) {
+      mostrarMensagem(
+        "Seleccione a multa que pretende contestar.",
+        "erro"
+      );
+      return;
+    }
+
+    if (!motivoReclamacao) {
+      mostrarMensagem(
+        "Seleccione o motivo da reclamação.",
+        "erro"
+      );
+      return;
+    }
+
+    if (descricaoReclamacao.trim().length < 10) {
+      mostrarMensagem(
+        "Descreva o motivo da reclamação com pelo menos 10 caracteres.",
+        "erro"
+      );
+      return;
+    }
+
+    setASubmeterReclamacao(true);
+    setMensagem("");
+
+    try {
+      const novaReclamacao: Reclamacao = {
+        id: gerarReferencia("REC"),
+        referenciaMulta: multa.referencia,
+        motivo: motivoReclamacao,
+        descricao: descricaoReclamacao.trim(),
+        data: new Date().toISOString(),
+        estado: "Submetida",
+      };
+
+      const novasReclamacoes = [novaReclamacao, ...reclamacoes];
+
+      setReclamacoes(novasReclamacoes);
+      guardarLocalStorage(CHAVE_RECLAMACOES, novasReclamacoes);
+
+      const multasActualizadas = multas.map((item) =>
+        item.referencia === multa.referencia
+          ? { ...item, estado: "Em reclamação" as const }
+          : item
+      );
+
+      setMultas(multasActualizadas);
+      guardarLocalStorage(CHAVE_MULTAS, multasActualizadas);
+
+      setDescricaoReclamacao("");
+      setMotivoReclamacao("");
+      setSeparador("historico");
+
+      mostrarMensagem(
+        "Reclamação registada com sucesso. Guarde a referência para acompanhamento."
+      );
+    } catch {
+      mostrarMensagem(
+        "Não foi possível registar a reclamação.",
+        "erro"
+      );
+    } finally {
+      setASubmeterReclamacao(false);
+    }
+  }
+
+  function abrirReclamacao(multa: Multa) {
+    setMultaSelecionada(multa.referencia);
+    setSeparador("reclamacao");
+    setMensagem("");
+  }
+
+  function mudarSeparador(novoSeparador: Separador) {
+    setSeparador(novoSeparador);
+    setMensagem("");
+  }
+
+  if (!carregado) {
+    return (
+      <main className="flex min-h-[60vh] items-center justify-center">
+        <div className="flex items-center gap-3 text-slate-600">
+          <LoaderCircle className="h-5 w-5 animate-spin" />
+          <span>A carregar multas e taxas...</span>
+        </div>
+      </main>
     );
   }
 
-  const campo =
-    "w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
-
   return (
-    <main className="min-h-full bg-slate-50 px-4 py-5 sm:px-6">
-      <div className="mx-auto w-full max-w-2xl">
-        <header className="mb-6 flex items-center gap-3">
+    <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <header className="overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-950 via-emerald-900 to-teal-800 p-6 text-white shadow-sm sm:p-8">
           <button
             type="button"
-            onClick={voltar}
-            aria-label="Voltar"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-700 hover:bg-slate-200"
+            onClick={() => router.push("/inicio")}
+            className="mb-5 inline-flex items-center gap-2 text-sm text-emerald-100 transition hover:text-white"
           >
-            <ArrowLeft size={21} />
+            <ArrowLeft className="h-4 w-4" />
+            Voltar ao início
           </button>
 
-          <div className="min-w-0 flex-1 text-center">
-            <h1 className="text-lg font-bold text-slate-900">
-              Multas
-            </h1>
-            <p className="mt-1 text-xs text-slate-500">
-              Município de Namaacha
-            </p>
-          </div>
-
-          <div className="h-10 w-10 shrink-0" />
-        </header>
-
-        {mostrarReclamacao && multaSeleccionada ? (
-          <section>
-            <div className="mb-5">
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-800">
-                <FileText size={25} />
+          <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
+            <div className="max-w-2xl">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
+                <FileText className="h-6 w-6" />
               </div>
 
-              <h2 className="text-xl font-bold text-slate-900">
-                Reclamar uma multa
-              </h2>
+              <p className="text-sm font-medium text-emerald-200">
+                Município da Namaacha
+              </p>
 
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Referência: {multaSeleccionada.referencia}
+              <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
+                Multas e Taxas
+              </h1>
+
+              <p className="mt-3 max-w-xl text-sm leading-6 text-emerald-50 sm:text-base">
+                Consulte as suas multas, registe pedidos de pagamento e
+                acompanhe as reclamações através do portal municipal.
               </p>
             </div>
 
-            <form
-              onSubmit={validarReclamacao}
-              className="space-y-4 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm"
+            <div className="rounded-2xl border border-white/15 bg-white/10 p-5 md:min-w-56">
+              <p className="text-sm text-emerald-100">
+                Total de multas pendentes
+              </p>
+              <p className="mt-2 text-2xl font-bold">
+                {formatarValor(valorPendente)}
+              </p>
+              <p className="mt-1 text-xs text-emerald-100">
+                {multasPendentes.length} multa(s) por regularizar
+              </p>
+            </div>
+          </div>
+        </header>
+
+        {mensagem && (
+          <div
+            role="status"
+            className={`flex items-start gap-3 rounded-2xl border p-4 ${
+              tipoMensagem === "erro"
+                ? "border-red-200 bg-red-50 text-red-800"
+                : "border-emerald-200 bg-emerald-50 text-emerald-800"
+            }`}
+          >
+            {tipoMensagem === "erro" ? (
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            ) : (
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+            )}
+
+            <p className="flex-1 text-sm leading-6">{mensagem}</p>
+
+            <button
+              type="button"
+              aria-label="Fechar mensagem"
+              onClick={() => setMensagem("")}
+              className="rounded-lg p-1 transition hover:bg-black/5"
             >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-800">
-                  Tipo de ocorrência
-                </label>
-                <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-                  {multaSeleccionada.tipo}
-                </div>
+                <p className="text-sm text-slate-500">Multas registadas</p>
+                <p className="mt-2 text-2xl font-bold text-slate-900">
+                  {multas.length}
+                </p>
+              </div>
+              <div className="rounded-xl bg-blue-50 p-3 text-blue-700">
+                <FileText className="h-5 w-5" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500">Pendentes</p>
+                <p className="mt-2 text-2xl font-bold text-amber-700">
+                  {multasPendentes.length}
+                </p>
+              </div>
+              <div className="rounded-xl bg-amber-50 p-3 text-amber-700">
+                <Clock className="h-5 w-5" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500">Reclamações</p>
+                <p className="mt-2 text-2xl font-bold text-purple-700">
+                  {reclamacoes.length}
+                </p>
+              </div>
+              <div className="rounded-xl bg-purple-50 p-3 text-purple-700">
+                <MessageSquareWarning className="h-5 w-5" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <nav className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:grid-cols-4">
+          {[
+            {
+              id: "consultar",
+              nome: "Consultar multas",
+              icon: Search,
+            },
+            {
+              id: "pagamento",
+              nome: "Pagamento",
+              icon: Wallet,
+            },
+            {
+              id: "historico",
+              nome: "Histórico",
+              icon: History,
+            },
+            {
+              id: "reclamacao",
+              nome: "Reclamação",
+              icon: MessageSquareWarning,
+            },
+          ].map((item) => {
+            const Icone = item.icon;
+            const activo = separador === item.id;
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() =>
+                  mudarSeparador(item.id as Separador)
+                }
+                className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-semibold transition ${
+                  activo
+                    ? "bg-emerald-800 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <Icone className="h-4 w-4" />
+                <span>{item.nome}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {separador === "consultar" && (
+          <section className="space-y-5">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  As minhas multas
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Pesquise pela referência, tipo ou descrição da multa.
+                </p>
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-800">
-                  Valor registado
-                </label>
-                <div className="rounded-xl bg-slate-50 p-3 text-sm font-semibold text-slate-900">
-                  {formatarValor(multaSeleccionada.valor)}
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="search"
+                    value={pesquisa}
+                    onChange={(event) => setPesquisa(event.target.value)}
+                    placeholder="Pesquisar multa..."
+                    className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-9 pr-3 text-sm outline-none transition focus:border-emerald-700 sm:w-64"
+                  />
                 </div>
-              </div>
 
-              <div>
-                <label
-                  htmlFor="motivo"
-                  className="mb-2 block text-sm font-medium text-slate-800"
+                <select
+                  value={estadoFiltro}
+                  onChange={(event) => setEstadoFiltro(event.target.value)}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-emerald-700"
                 >
-                  Motivos da reclamação *
+                  <option value="Todas">Todos os estados</option>
+                  <option value="Pendente">Pendente</option>
+                  <option value="Paga">Paga</option>
+                  <option value="Em reclamação">Em reclamação</option>
+                </select>
+              </div>
+            </div>
+
+            {multasFiltradas.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
+                <Search className="mx-auto h-8 w-8 text-slate-400" />
+                <h3 className="mt-3 font-semibold text-slate-800">
+                  Nenhuma multa encontrada
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Experimente alterar os termos da pesquisa ou o filtro.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {multasFiltradas.map((multa) => (
+                  <article
+                    key={multa.id}
+                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md sm:p-6"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-emerald-800">
+                          {multa.tipo}
+                        </p>
+                        <h3 className="mt-2 text-lg font-bold text-slate-900">
+                          {multa.descricao}
+                        </h3>
+                        <p className="mt-2 text-sm text-slate-500">
+                          Referência:{" "}
+                          <span className="font-semibold text-slate-700">
+                            {multa.referencia}
+                          </span>
+                        </p>
+                      </div>
+
+                      <EstadoBadge estado={multa.estado} />
+                    </div>
+
+                    <div className="mt-5 space-y-3 border-t border-slate-100 pt-4">
+                      <div className="flex items-center gap-2 text-sm text-slate-600">
+                        <MapPin className="h-4 w-4 shrink-0 text-slate-400" />
+                        {multa.local}
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-slate-600">
+                        <Clock className="h-4 w-4 shrink-0 text-slate-400" />
+                        {formatarData(multa.data)}
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex flex-col justify-between gap-4 border-t border-slate-100 pt-4 sm:flex-row sm:items-end">
+                      <div>
+                        <p className="text-xs text-slate-500">
+                          Valor da multa
+                        </p>
+                        <p className="mt-1 text-xl font-bold text-slate-900">
+                          {formatarValor(multa.valor)}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {multa.estado === "Pendente" && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              selecionarMultaParaPagamento(multa)
+                            }
+                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-900"
+                          >
+                            Pagar multa
+                            <ArrowRight className="h-4 w-4" />
+                          </button>
+                        )}
+
+                        {multa.estado !== "Paga" && (
+                          <button
+                            type="button"
+                            onClick={() => abrirReclamacao(multa)}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                          >
+                            Reclamar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {separador === "pagamento" && (
+          <section className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Registar pagamento
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  Seleccione a multa e o método que pretende utilizar.
+                </p>
+              </div>
+
+              <div className="mt-6 space-y-2">
+                <label
+                  htmlFor="multa-pagamento"
+                  className="block text-sm font-semibold text-slate-700"
+                >
+                  Multa a regularizar
                 </label>
-                <textarea
-                  id="motivo"
-                  required
-                  maxLength={2000}
-                  rows={5}
-                  value={motivo}
-                  onChange={(e) => {
-                    setMotivo(e.target.value);
+
+                <select
+                  id="multa-pagamento"
+                  value={multaSelecionada}
+                  onChange={(event) => {
+                    setMultaSelecionada(event.target.value);
                     setMensagem("");
                   }}
-                  placeholder="Explique os motivos pelos quais solicita a revisão."
-                  className={campo}
-                />
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-emerald-700"
+                >
+                  <option value="">Seleccione uma multa</option>
+                  {multas
+                    .filter((multa) => multa.estado === "Pendente")
+                    .map((multa) => (
+                      <option
+                        key={multa.id}
+                        value={multa.referencia}
+                      >
+                        {multa.referencia} — {multa.tipo} —{" "}
+                        {formatarValor(multa.valor)}
+                      </option>
+                    ))}
+                </select>
               </div>
 
-              {mensagem && (
-                <div
-                  role="status"
-                  className="rounded-xl bg-amber-50 p-4 text-sm leading-6 text-amber-900"
-                >
-                  {mensagem}
+              {multaParaPagamento && (
+                <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+                  <p className="text-sm font-semibold text-emerald-900">
+                    {multaParaPagamento.descricao}
+                  </p>
+                  <p className="mt-1 text-xs text-emerald-800">
+                    Referência: {multaParaPagamento.referencia}
+                  </p>
+                  <p className="mt-3 text-xl font-bold text-emerald-950">
+                    {formatarValor(multaParaPagamento.valor)}
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-6">
+                <h3 className="text-sm font-semibold text-slate-700">
+                  Forma de pagamento
+                </h3>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {METODOS.map((metodo) => {
+                    const Icone = metodo.icon;
+                    const seleccionado =
+                      metodoSelecionado === metodo.nome;
+
+                    return (
+                      <button
+                        key={metodo.nome}
+                        type="button"
+                        onClick={() => {
+                          setMetodoSelecionado(metodo.nome);
+                          setNumeroPagamento("");
+                          setMensagem("");
+                        }}
+                        aria-pressed={seleccionado}
+                        className={`flex items-start gap-3 rounded-xl border p-4 text-left transition ${
+                          seleccionado
+                            ? "border-emerald-700 bg-emerald-50 ring-2 ring-emerald-100"
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        <span
+                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                            seleccionado
+                              ? "bg-emerald-800 text-white"
+                              : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          <Icone className="h-5 w-5" />
+                        </span>
+
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-semibold text-slate-900">
+                            {metodo.nome}
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-slate-500">
+                            {metodo.descricao}
+                          </span>
+                        </span>
+
+                        {seleccionado && (
+                          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-700" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {metodoSelecionado !== "Pagamento presencial" && (
+                <div className="mt-5 space-y-2">
+                  <label
+                    htmlFor="numero-pagamento"
+                    className="block text-sm font-semibold text-slate-700"
+                  >
+                    Número de telefone associado ao {metodoSelecionado}
+                  </label>
+
+                  <div className="flex overflow-hidden rounded-xl border border-slate-200 bg-white transition focus-within:border-emerald-700 focus-within:ring-2 focus-within:ring-emerald-100">
+                    <span className="flex items-center border-r border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-600">
+                      +258
+                    </span>
+
+                    <input
+                      id="numero-pagamento"
+                      type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel-national"
+                      placeholder="84 123 4567"
+                      value={numeroPagamento}
+                      onChange={(event) => {
+                        setNumeroPagamento(
+                          event.target.value
+                            .replace(/\D/g, "")
+                            .slice(0, 9)
+                        );
+                        setMensagem("");
+                      }}
+                      className="min-w-0 flex-1 px-3 py-3 text-sm outline-none"
+                      aria-describedby="numero-pagamento-ajuda"
+                      maxLength={9}
+                    />
+                  </div>
+
+                  <p
+                    id="numero-pagamento-ajuda"
+                    className="text-xs leading-5 text-slate-500"
+                  >
+                    Introduza os 9 dígitos do número associado à carteira
+                    móvel, sem incluir o indicativo +258.
+                  </p>
+                </div>
+              )}
+
+              {metodoSelecionado === "Pagamento presencial" && (
+                <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+                    <div>
+                      <p className="text-sm font-semibold text-blue-900">
+                        Pagamento presencial
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-blue-800">
+                        Dirija-se aos serviços municipais competentes para
+                        confirmar os procedimentos e os dados oficiais
+                        necessários para regularizar a multa.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
 
               <button
-                type="submit"
-                className="w-full rounded-xl bg-emerald-700 px-4 py-3.5 text-sm font-semibold text-white hover:bg-emerald-800"
+                type="button"
+                onClick={criarPedidoPagamento}
+                disabled={aRegistarPagamento}
+                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-800 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Validar reclamação
+                {aRegistarPagamento ? (
+                  <>
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    A registar pedido...
+                  </>
+                ) : (
+                  <>
+                    Registar pedido de pagamento
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
               </button>
 
-              <p className="text-xs leading-5 text-slate-500">
-                A validação local não suspende prazos nem substitui
-                a apresentação da reclamação à entidade competente.
-              </p>
-            </form>
-          </section>
-        ) : multaSeleccionada ? (
-          <section className="space-y-4">
-            <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-rose-50 text-rose-700">
-                <AlertTriangle size={25} />
-              </div>
-
-              <h2 className="text-xl font-bold text-slate-900">
-                Detalhes da multa
-              </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                Referência: {multaSeleccionada.referencia}
-              </p>
-
-              <div className="mt-5 space-y-4">
-                <div>
-                  <p className="text-xs text-slate-500">Descrição</p>
-                  <p className="mt-1 text-sm font-medium text-slate-900">
-                    {multaSeleccionada.descricao}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-slate-500">Categoria</p>
-                  <p className="mt-1 text-sm text-slate-900">
-                    {multaSeleccionada.tipo}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-slate-500">Data</p>
-                  <p className="mt-1 text-sm text-slate-900">
-                    {multaSeleccionada.data}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-slate-500">Entidade</p>
-                  <p className="mt-1 text-sm text-slate-900">
-                    {multaSeleccionada.entidade}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-slate-500">Valor</p>
-                  <p className="mt-1 text-2xl font-bold text-slate-900">
-                    {formatarValor(multaSeleccionada.valor)}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="mb-2 text-xs text-slate-500">Estado</p>
-                  <span
-                    className={`inline-flex rounded-full px-3 py-1.5 text-xs font-semibold ${corEstado(
-                      multaSeleccionada.estado
-                    )}`}
-                  >
-                    {multaSeleccionada.estado}
-                  </span>
-                </div>
-              </div>
-
-              {multaSeleccionada.estado === "Pendente" && (
-                <div className="mt-6 rounded-xl bg-amber-50 p-4">
-                  <p className="text-sm leading-6 text-amber-900">
-                    Confirme a validade da multa e solicite a
-                    referência oficial de pagamento junto da
-                    entidade emissora antes de efectuar qualquer
-                    pagamento.
-                  </p>
-                </div>
-              )}
-
-              {multaSeleccionada.estado !== "Paga" && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    abrirReclamacao(multaSeleccionada)
-                  }
-                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Apresentar reclamação
-                  <ArrowRight size={18} />
-                </button>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setMultaSeleccionada(null);
-                setMensagem("");
-              }}
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              Voltar às multas
-            </button>
-          </section>
-        ) : seleccionado ? (
-          <section className="space-y-4">
-            <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-              <div
-                className={`mb-4 flex h-14 w-14 items-center justify-center rounded-2xl ${seleccionado.fundo} ${seleccionado.cor}`}
-              >
-                {(() => {
-                  const Icon = seleccionado.icon;
-                  return <Icon size={28} />;
-                })()}
-              </div>
-
-              <h2 className="text-xl font-bold text-slate-900">
-                {seleccionado.titulo}
-              </h2>
-
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                {seleccionado.detalhe}
-              </p>
-
-              <h3 className="mt-6 font-semibold text-slate-900">
-                Como proceder
-              </h3>
-
-              <ul className="mt-3 space-y-3">
-                {seleccionado.passos.map((passo) => (
-                  <li
-                    key={passo}
-                    className="flex gap-3 text-sm leading-5 text-slate-600"
-                  >
-                    <CheckCircle2
-                      size={18}
-                      className="shrink-0 text-emerald-700"
-                    />
-                    {passo}
-                  </li>
-                ))}
-              </ul>
-
-              {(seleccionado.id === "consultar" ||
-                seleccionado.id === "historico") && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSeleccionado(null);
-                    setPesquisa("");
-                    setFiltro(
-                      seleccionado.id === "historico"
-                        ? "Paga"
-                        : "Todas"
-                    );
-                  }}
-                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800"
-                >
-                  {seleccionado.id === "historico"
-                    ? "Ver histórico de pagamentos"
-                    : "Consultar registos"}
-                  <ArrowRight size={18} />
-                </button>
-              )}
-
-              {seleccionado.id === "referencia" && (
-                <div className="mt-6 rounded-xl bg-amber-50 p-4">
-                  <p className="text-sm leading-6 text-amber-900">
-                    A emissão de uma referência válida depende
-                    do sistema oficial da entidade responsável.
-                    Esta demonstração não gera referências de
-                    pagamento reais.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSeleccionado(null);
-                      setFiltro("Pendente");
-                    }}
-                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800"
-                  >
-                    Consultar multas pendentes
-                    <ArrowRight size={18} />
-                  </button>
-                </div>
-              )}
-
-              {seleccionado.id === "reclamacao" && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSeleccionado(null);
-                    setFiltro("Todas");
-                  }}
-                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800"
-                >
-                  Seleccionar multa
-                  <ArrowRight size={18} />
-                </button>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSeleccionado(null);
-                setMensagem("");
-              }}
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              Voltar aos serviços
-            </button>
-          </section>
-        ) : (
-          <>
-            <section className="mb-5 overflow-hidden rounded-2xl bg-rose-950 p-5 text-white">
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 text-rose-200">
-                <ShieldCheck size={27} />
-              </div>
-
-              <h2 className="text-lg font-bold">
-                Regularize as suas pendências
-              </h2>
-
-              <p className="mt-2 text-sm leading-6 text-rose-100">
-                Consulte multas, verifique os seus registos e
-                obtenha informações sobre os procedimentos de
-                pagamento e reclamação.
-              </p>
-            </section>
-
-            <section className="mb-5 grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-                <div className="flex items-center gap-2 text-rose-700">
-                  <AlertTriangle size={18} />
-                  <span className="text-xs font-medium">
-                    Em dívida
-                  </span>
-                </div>
-                <p className="mt-3 text-xl font-bold text-slate-900">
-                  {formatarValor(totalPendente)}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {quantidadePendente} pendente(s)
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-                <div className="flex items-center gap-2 text-emerald-700">
-                  <CheckCircle2 size={18} />
-                  <span className="text-xs font-medium">
-                    Total pago
-                  </span>
-                </div>
-                <p className="mt-3 text-xl font-bold text-slate-900">
-                  {formatarValor(totalPago)}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Multas demonstrativas
-                </p>
-              </div>
-            </section>
-
-            <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-3">
-              <p className="text-xs leading-5 text-amber-900">
-                <strong>Modo de demonstração:</strong> as multas
-                e os valores abaixo são fictícios. Não representam
-                dívidas reais nem referências oficiais.
+              <p className="mt-3 text-xs leading-5 text-slate-500">
+                O registo guarda o pedido no portal. A confirmação e a
+                integração com a carteira móvel dependem dos serviços de
+                pagamento e do sistema municipal.
               </p>
             </div>
 
-            <section className="mb-5">
-              <h2 className="text-base font-bold text-slate-900">
-                Serviços disponíveis
-              </h2>
-
-              <div className="mt-3 space-y-3">
-                {servicos.map((servico) => {
-                  const Icon = servico.icon;
-
-                  return (
-                    <button
-                      key={servico.id}
-                      type="button"
-                      onClick={() => abrirServico(servico)}
-                      className="group flex w-full items-center gap-3 rounded-2xl border border-slate-100 bg-white p-3 text-left shadow-sm transition hover:border-emerald-200 hover:shadow-md"
-                    >
-                      <span
-                        className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${servico.fundo} ${servico.cor}`}
-                      >
-                        <Icon size={23} />
-                      </span>
-
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold text-slate-900">
-                          {servico.titulo}
-                        </span>
-                        <span className="mt-1 block text-xs leading-5 text-slate-500">
-                          {servico.descricao}
-                        </span>
-                      </span>
-
-                      <ArrowRight
-                        size={18}
-                        className="shrink-0 text-slate-400 group-hover:text-emerald-700"
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-              <div className="mb-4 flex items-center justify-between gap-3">
+            <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
+                  <ShieldCheck className="h-5 w-5" />
+                </div>
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">
-                    Últimas multas
-                  </h2>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Registos ilustrativos
+                  <h3 className="font-bold text-slate-900">
+                    Resumo do pedido
+                  </h3>
+                  <p className="text-sm text-slate-500">
+                    Confirme os dados seleccionados.
                   </p>
                 </div>
-
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
-                  {multasFiltradas.length} registos
-                </span>
               </div>
 
-              <label className="mb-3 flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 focus-within:border-emerald-600">
-                <Search size={18} className="text-slate-400" />
-                <input
-                  type="search"
-                  value={pesquisa}
-                  onChange={(e) => setPesquisa(e.target.value)}
-                  placeholder="Pesquisar referência ou multa"
-                  aria-label="Pesquisar multas"
-                  className="w-full bg-transparent text-sm outline-none"
+              <div className="mt-6 space-y-4">
+                <LinhaResumo
+                  titulo="Referência"
+                  valor={multaParaPagamento?.referencia ?? "Não seleccionada"}
                 />
-                {pesquisa && (
-                  <button
-                    type="button"
-                    onClick={() => setPesquisa("")}
-                    aria-label="Limpar pesquisa"
-                    className="text-slate-400"
-                  >
-                    <X size={17} />
-                  </button>
-                )}
-              </label>
+                <LinhaResumo
+                  titulo="Tipo de multa"
+                  valor={multaParaPagamento?.tipo ?? "—"}
+                />
+                <LinhaResumo
+                  titulo="Método"
+                  valor={metodoSelecionado}
+                />
 
-              <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-                {["Todas", "Pendente", "Paga", "Em reclamação"].map(
-                  (estado) => (
-                    <button
-                      key={estado}
-                      type="button"
-                      onClick={() => setFiltro(estado)}
-                      className={`shrink-0 rounded-full px-3 py-2 text-xs font-medium transition ${
-                        filtro === estado
-                          ? "bg-emerald-700 text-white"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }`}
-                    >
-                      {estado}
-                    </button>
-                  )
+                {metodoSelecionado !== "Pagamento presencial" && (
+                  <LinhaResumo
+                    titulo="Número"
+                    valor={
+                      numeroPagamento
+                        ? `+258 ${numeroPagamento}`
+                        : "Por preencher"
+                    }
+                  />
                 )}
+
+                <div className="border-t border-slate-100 pt-4">
+                  <p className="text-sm text-slate-500">Total a regularizar</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900">
+                    {formatarValor(multaParaPagamento?.valor ?? 0)}
+                  </p>
+                </div>
               </div>
 
-              <div className="space-y-3">
-                {multasFiltradas.map((multa) => (
-                  <button
-                    key={multa.id}
-                    type="button"
-                    onClick={() => {
-                      setMultaSeleccionada(multa);
-                      setSeleccionado(null);
-                      setMostrarReclamacao(false);
-                      setMensagem("");
-                    }}
-                    className="w-full rounded-xl border border-slate-100 p-3 text-left transition hover:bg-slate-50"
-                  >
-                    <div className="flex items-start justify-between gap-3">
+              <div className="mt-6 rounded-xl bg-slate-50 p-4">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                  <p className="text-xs leading-5 text-slate-600">
+                    O pedido ficará registado como pendente até que o
+                    pagamento seja confirmado pelo sistema municipal.
+                  </p>
+                </div>
+              </div>
+            </aside>
+          </section>
+        )}
+
+        {separador === "historico" && (
+          <section className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">
+                Histórico e acompanhamento
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Consulte os pedidos de pagamento e as reclamações submetidas.
+              </p>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 p-5">
+                <h3 className="font-bold text-slate-900">
+                  Pedidos de pagamento
+                </h3>
+              </div>
+
+              {pedidos.length === 0 ? (
+                <EstadoVazio
+                  titulo="Ainda não existem pedidos"
+                  descricao="Os seus pedidos de pagamento aparecerão aqui."
+                  icon="pagamento"
+                />
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {pedidos.map((pedido) => (
+                    <article
+                      key={pedido.id}
+                      className="flex flex-col justify-between gap-4 p-5 sm:flex-row sm:items-center"
+                    >
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-900">
-                          {multa.tipo}
+                        <p className="break-all text-sm font-semibold text-slate-900">
+                          {pedido.referenciaMulta}
                         </p>
-                        <p className="mt-1 break-all text-xs text-slate-500">
-                          {multa.referencia}
+                        <p className="mt-1 text-sm text-slate-600">
+                          {pedido.metodo}
+                          {pedido.numeroPagamento
+                            ? ` · ${pedido.numeroPagamento}`
+                            : ""}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Registado em {formatarData(pedido.data)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Pedido: {pedido.id}
                         </p>
                       </div>
 
-                      <span
-                        className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold ${corEstado(
-                          multa.estado
-                        )}`}
-                      >
-                        {multa.estado}
-                      </span>
-                    </div>
+                      <div className="sm:text-right">
+                        <p className="font-bold text-slate-900">
+                          {formatarValor(pedido.valor)}
+                        </p>
+                        <span className="mt-2 inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+                          {pedido.estado}
+                        </span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
 
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      <span className="text-xs text-slate-500">
-                        {multa.data}
-                      </span>
-                      <span className="text-sm font-bold text-slate-900">
-                        {formatarValor(multa.valor)}
-                      </span>
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-end gap-1 text-xs font-semibold text-emerald-700">
-                      Ver detalhes
-                      <ArrowRight size={14} />
-                    </div>
-                  </button>
-                ))}
-
-                {multasFiltradas.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center">
-                    <Search
-                      size={26}
-                      className="mx-auto text-slate-400"
-                    />
-                    <p className="mt-3 text-sm font-semibold text-slate-800">
-                      Nenhuma multa encontrada
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Altere a pesquisa ou o filtro seleccionado.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section className="mt-5 rounded-2xl bg-white p-5 shadow-sm">
-              <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
-                <CircleDollarSign size={23} />
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 p-5">
+                <h3 className="font-bold text-slate-900">Reclamações</h3>
               </div>
 
-              <h3 className="text-base font-bold text-slate-900">
-                Pague com segurança
+              {reclamacoes.length === 0 ? (
+                <EstadoVazio
+                  titulo="Ainda não existem reclamações"
+                  descricao="As reclamações submetidas serão apresentadas nesta secção."
+                  icon="reclamacao"
+                />
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {reclamacoes.map((reclamacao) => (
+                    <article key={reclamacao.id} className="p-5">
+                      <div className="flex flex-col justify-between gap-3 sm:flex-row">
+                        <div>
+                          <p className="font-semibold text-slate-900">
+                            {reclamacao.referenciaMulta}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-600">
+                            {reclamacao.motivo}
+                          </p>
+                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-500">
+                            {reclamacao.descricao}
+                          </p>
+                          <p className="mt-2 text-xs text-slate-500">
+                            Submetida em {formatarData(reclamacao.data)}
+                          </p>
+                          <p className="mt-1 break-all text-xs text-slate-500">
+                            Referência da reclamação: {reclamacao.id}
+                          </p>
+                        </div>
+
+                        <span className="h-fit w-fit rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-800">
+                          {reclamacao.estado}
+                        </span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {separador === "reclamacao" && (
+          <section className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_0.8fr]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-50 text-purple-700">
+                  <MessageSquareWarning className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">
+                    Apresentar reclamação
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Indique a multa e explique o motivo da contestação.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 space-y-5">
+                <div className="space-y-2">
+                  <label
+                    htmlFor="multa-reclamacao"
+                    className="block text-sm font-semibold text-slate-700"
+                  >
+                    Multa a contestar
+                  </label>
+
+                  <select
+                    id="multa-reclamacao"
+                    value={multaSelecionada}
+                    onChange={(event) => {
+                      setMultaSelecionada(event.target.value);
+                      setMensagem("");
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-700"
+                  >
+                    <option value="">Seleccione uma multa</option>
+                    {multas
+                      .filter((multa) => multa.estado !== "Paga")
+                      .map((multa) => (
+                        <option
+                          key={multa.id}
+                          value={multa.referencia}
+                        >
+                          {multa.referencia} — {multa.tipo}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label
+                    htmlFor="motivo-reclamacao"
+                    className="block text-sm font-semibold text-slate-700"
+                  >
+                    Motivo da reclamação
+                  </label>
+
+                  <select
+                    id="motivo-reclamacao"
+                    value={motivoReclamacao}
+                    onChange={(event) =>
+                      setMotivoReclamacao(event.target.value)
+                    }
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-700"
+                  >
+                    <option value="">Seleccione o motivo</option>
+                    <option value="Multa indevida">Multa indevida</option>
+                    <option value="Erro nos dados">
+                      Erro nos dados da multa
+                    </option>
+                    <option value="Pagamento já efectuado">
+                      Pagamento já efectuado
+                    </option>
+                    <option value="Duplicação da multa">
+                      Duplicação da multa
+                    </option>
+                    <option value="Outro motivo">Outro motivo</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label
+                    htmlFor="descricao-reclamacao"
+                    className="block text-sm font-semibold text-slate-700"
+                  >
+                    Descrição
+                  </label>
+
+                  <textarea
+                    id="descricao-reclamacao"
+                    value={descricaoReclamacao}
+                    onChange={(event) =>
+                      setDescricaoReclamacao(event.target.value)
+                    }
+                    rows={5}
+                    maxLength={1500}
+                    placeholder="Explique detalhadamente por que motivo pretende contestar esta multa..."
+                    className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 outline-none transition focus:border-emerald-700 focus:ring-2 focus:ring-emerald-100"
+                  />
+
+                  <p className="text-right text-xs text-slate-400">
+                    {descricaoReclamacao.length}/1500 caracteres
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={submeterReclamacao}
+                  disabled={aSubmeterReclamacao}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-800 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {aSubmeterReclamacao ? (
+                    <>
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      A submeter...
+                    </>
+                  ) : (
+                    <>
+                      Submeter reclamação
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+              <h3 className="font-bold text-slate-900">
+                Acompanhamento
               </h3>
 
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Confirme sempre a autenticidade da notificação,
-                a entidade emissora, o valor e a referência antes
-                de efectuar um pagamento.
+                Depois de submeter a reclamação, poderá consultar o registo
+                na secção de histórico.
               </p>
 
-              <div className="mt-4 flex items-start gap-2 rounded-xl bg-slate-50 p-3">
-                <Clock
-                  size={18}
-                  className="mt-0.5 shrink-0 text-emerald-700"
-                />
-                <p className="text-xs leading-5 text-slate-600">
-                  Os prazos e os procedimentos variam consoante
-                  a natureza da multa e a entidade competente.
-                </p>
+              <div className="mt-5 rounded-xl bg-slate-50 p-4">
+                <div className="flex items-start gap-3">
+                  <Clock className="mt-0.5 h-5 w-5 shrink-0 text-slate-500" />
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">
+                      Estado inicial
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      A reclamação será registada como submetida. A análise
+                      e a resposta dependem dos serviços municipais.
+                    </p>
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-3 flex items-start gap-2 rounded-xl bg-slate-50 p-3">
-                <CreditCard
-                  size={18}
-                  className="mt-0.5 shrink-0 text-emerald-700"
-                />
-                <p className="text-xs leading-5 text-slate-600">
-                  A aplicação ainda não processa pagamentos nem
-                  emite referências reais.
-                </p>
-              </div>
-            </section>
-          </>
+              <button
+                type="button"
+                onClick={() => mudarSeparador("historico")}
+                className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-950"
+              >
+                Consultar histórico
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </aside>
+          </section>
         )}
+
+        <footer className="flex flex-col justify-between gap-3 border-t border-slate-200 py-5 text-xs leading-5 text-slate-500 sm:flex-row sm:items-center">
+          <p>Município da Namaacha Digital</p>
+          <p>Portal de serviços municipais</p>
+        </footer>
       </div>
     </main>
+  );
+}
+
+function EstadoBadge({ estado }: { estado: EstadoMulta }) {
+  const classes: Record<EstadoMulta, string> = {
+    Pendente: "bg-amber-50 text-amber-800",
+    Paga: "bg-emerald-50 text-emerald-800",
+    "Em reclamação": "bg-purple-50 text-purple-800",
+  };
+
+  return (
+    <span
+      className={`inline-flex shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${classes[estado]}`}
+    >
+      {estado}
+    </span>
+  );
+}
+
+function LinhaResumo({
+  titulo,
+  valor,
+}: {
+  titulo: string;
+  valor: string;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <span className="text-sm text-slate-500">{titulo}</span>
+      <span className="max-w-[60%] break-words text-right text-sm font-semibold text-slate-800">
+        {valor}
+      </span>
+    </div>
+  );
+}
+
+function EstadoVazio({
+  titulo,
+  descricao,
+  icon,
+}: {
+  titulo: string;
+  descricao: string;
+  icon: "pagamento" | "reclamacao";
+}) {
+  const Icone = icon === "pagamento" ? History : MessageSquareWarning;
+
+  return (
+    <div className="p-8 text-center sm:p-10">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+        <Icone className="h-6 w-6" />
+      </div>
+      <h4 className="mt-3 font-semibold text-slate-900">{titulo}</h4>
+      <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">
+        {descricao}
+      </p>
+    </div>
   );
 }
