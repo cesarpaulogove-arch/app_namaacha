@@ -39,3 +39,32 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# Ignorar configurações do editor (VS Code e Android Studio)
+.idea/
+.vscode/
+*.iml
+
+# Ignorar builds e arquivos temporários do Android
+android/build/
+android/app/build/
+.gradle/
+local.properties
+
+# Ignorar arquivos gerados pelo sistema operacional
+.DS_Store
+Thumbs.db
+# Ignorar arquivos de build locais do Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/captures/
+android/*.iml
+android/.idea/
+
+# Se quiser ignorar as ferramentas de build do Gradle no PC
+android/gradlew
+android/gradlew.bat
+android/gradle/
+android/
+

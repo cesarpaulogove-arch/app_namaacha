@@ -1,4 +1,3 @@
-
 import Link from "next/link";
 import { AuthHeader } from "@/components/auth/AuthHeader";
 import { RegisterForm } from "@/components/auth/RegisterForm";

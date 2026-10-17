@@ -1,8 +1,8 @@
 
-
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import {
   ArrowLeft,
   ArrowRight,
@@ -11,506 +11,978 @@ import {
   ClipboardList,
   FileText,
   Leaf,
-  Plus,
+  MapPin,
+  Phone,
   Search,
   ShieldCheck,
+  Smartphone,
+  UserRound,
   X,
+  Info,
 } from "lucide-react";
 
-type Licenca = {
+import { obterContaAtual, type ContaLocal } from "@/lib/auth-local";
+
+type OperadorPagamento = "mpesa" | "emola" | "mkesh";
+
+type TipoLicenca =
+  | "funcionamento"
+  | "construcao"
+  | "publicidade"
+  | "ambiental";
+
+type PedidoLicencaLocal = {
   id: string;
-  titulo: string;
+  contaId: string;
+  nomeRequerente: string;
+  email: string;
+  telefone: string;
+  tipoTitular: string;
+  tipoLicenca: TipoLicenca;
+  localizacao: string;
   descricao: string;
-  detalhe: string;
-  requisitos: string[];
-  cor: string;
-  fundo: string;
-  icon: typeof Building2;
+  operadorPagamento?: OperadorPagamento;
+  telefonePagamento?: string;
+  estado: "Rascunho";
+  criadoEm: string;
 };
 
-const licencas: Licenca[] = [
+const CHAVE_PEDIDOS = "namaacha_pedidos_licencas";
+
+const operadoresPagamento: {
+  id: OperadorPagamento;
+  nome: string;
+  descricao: string;
+  cor: string;
+  fundo: string;
+}[] = [
   {
-    id: "funcionamento",
-    titulo: "Licença de Funcionamento",
-    descricao: "Estabelecimentos comerciais",
-    detalhe:
-      "Consulte os procedimentos para solicitar ou renovar a licença de funcionamento do seu estabelecimento.",
-    requisitos: [
-      "Identificação do requerente",
-      "Identificação do estabelecimento",
-      "Documentação exigida para a actividade",
-    ],
-    cor: "text-emerald-700",
-    fundo: "bg-emerald-50",
-    icon: FileText,
+    id: "mpesa",
+    nome: "M-Pesa",
+    descricao: "Carteira móvel M-Pesa",
+    cor: "text-red-600",
+    fundo: "bg-red-50",
   },
   {
-    id: "construcao",
-    titulo: "Licença de Construção",
-    descricao: "Obras e edificações",
-    detalhe:
-      "Consulte os procedimentos de licenciamento para construção, ampliação ou alteração de edificações.",
-    requisitos: [
-      "Identificação do requerente",
-      "Identificação e localização do terreno",
-      "Projecto e documentos técnicos exigidos",
-    ],
-    cor: "text-emerald-700",
-    fundo: "bg-emerald-50",
+    id: "emola",
+    nome: "e-Mola",
+    descricao: "Carteira móvel e-Mola",
+    cor: "text-orange-600",
+    fundo: "bg-orange-50",
+  },
+  {
+    id: "mkesh",
+    nome: "mKesh",
+    descricao: "Carteira móvel mKesh",
+    cor: "text-blue-600",
+    fundo: "bg-blue-50",
+  },
+];
+
+const licencas: {
+  id: TipoLicenca;
+  nome: string;
+  descricao: string;
+  icon: typeof Building2;
+}[] = [
+  {
+    id: "funcionamento",
+    nome: "Licença de funcionamento",
+    descricao:
+      "Pedido de licença para abertura e funcionamento de estabelecimento.",
     icon: Building2,
   },
   {
+    id: "construcao",
+    nome: "Licença de construção",
+    descricao:
+      "Pedido de autorização para construção, ampliação ou alteração de imóvel.",
+    icon: FileText,
+  },
+  {
     id: "publicidade",
-    titulo: "Licença de Publicidade",
-    descricao: "Painéis e outdoors",
-    detalhe:
-      "Consulte os procedimentos para instalação de painéis publicitários, outdoors e outros suportes de publicidade.",
-    requisitos: [
-      "Identificação do requerente",
-      "Localização do suporte publicitário",
-      "Características e dimensões da publicidade",
-    ],
-    cor: "text-blue-700",
-    fundo: "bg-blue-50",
+    nome: "Licença de publicidade",
+    descricao:
+      "Autorização para colocação de anúncios, letreiros e outros suportes publicitários.",
     icon: ClipboardList,
   },
   {
     id: "ambiental",
-    titulo: "Licença Ambiental",
-    descricao: "Actividades com impacto ambiental",
-    detalhe:
-      "Consulte os procedimentos e requisitos ambientais aplicáveis à actividade que pretende desenvolver.",
-    requisitos: [
-      "Identificação do requerente",
-      "Descrição da actividade e localização",
-      "Documentação ambiental aplicável",
-    ],
-    cor: "text-emerald-700",
-    fundo: "bg-emerald-50",
+    nome: "Licença ambiental",
+    descricao:
+      "Pedido relacionado com actividades sujeitas a avaliação ou autorização ambiental.",
     icon: Leaf,
   },
 ];
 
+function gerarId(): string {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
+
+  return `LIC-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function obterPedidos(): PedidoLicencaLocal[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const dados = localStorage.getItem(CHAVE_PEDIDOS);
+
+    if (!dados) return [];
+
+    const pedidos: unknown = JSON.parse(dados);
+
+    return Array.isArray(pedidos)
+      ? (pedidos as PedidoLicencaLocal[])
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function LicencasPage() {
-  const [pesquisa, setPesquisa] = useState("");
-  const [seleccionada, setSeleccionada] =
-    useState<Licenca | null>(null);
-  const [novoPedido, setNovoPedido] = useState(false);
-  const [nomeRequerente, setNomeRequerente] = useState("");
-  const [contacto, setContacto] = useState("");
+  const [conta, setConta] = useState<ContaLocal | null>(null);
+  const [carregado, setCarregado] = useState(false);
+  const [vista, setVista] = useState<"novo" | "pedidos">("novo");
+
+  const [tipoLicenca, setTipoLicenca] =
+    useState<TipoLicenca | "">("");
   const [localizacao, setLocalizacao] = useState("");
   const [descricao, setDescricao] = useState("");
-  const [tipoLicenca, setTipoLicenca] = useState("");
-  const [mensagem, setMensagem] = useState("");
 
-  const listaFiltrada = licencas.filter((licenca) => {
-    const termo = pesquisa.trim().toLocaleLowerCase("pt");
+  const [operadorPagamento, setOperadorPagamento] =
+    useState<OperadorPagamento | "">("");
+  const [telefonePagamento, setTelefonePagamento] = useState("");
+
+  const [pedidos, setPedidos] = useState<PedidoLicencaLocal[]>([]);
+  const [mensagem, setMensagem] = useState("");
+  const [erro, setErro] = useState("");
+  const [pesquisa, setPesquisa] = useState("");
+  const [aGuardar, setAGuardar] = useState(false);
+
+  useEffect(() => {
+    setConta(obterContaAtual());
+    setPedidos(obterPedidos());
+    setCarregado(true);
+  }, []);
+
+  const nomeRequerente =
+    conta?.perfil?.nome || conta?.nome || "";
+
+  const contacto = conta?.telefone || "";
+  const email = conta?.email || "";
+  const tipoTitular = conta?.perfil?.tipo || "cidadao";
+
+  const licencaSelecionada = licencas.find(
+    (item) => item.id === tipoLicenca
+  );
+
+  const operadorSelecionado = operadoresPagamento.find(
+    (operador) => operador.id === operadorPagamento
+  );
+
+  const pedidosFiltrados = pedidos.filter((pedido) => {
+    const termo = pesquisa.trim().toLowerCase();
+
+    if (!termo) return true;
+
+    const nomeLicenca =
+      licencas.find((item) => item.id === pedido.tipoLicenca)?.nome ||
+      pedido.tipoLicenca;
 
     return (
-      licenca.titulo.toLocaleLowerCase("pt").includes(termo) ||
-      licenca.descricao.toLocaleLowerCase("pt").includes(termo)
+      nomeLicenca.toLowerCase().includes(termo) ||
+      pedido.localizacao.toLowerCase().includes(termo) ||
+      pedido.estado.toLowerCase().includes(termo)
     );
   });
 
-  function voltar() {
-    if (novoPedido) {
-      setNovoPedido(false);
-      setMensagem("");
-      return;
-    }
-
-    if (seleccionada) {
-      setSeleccionada(null);
-      return;
-    }
-
-    window.history.back();
+  function selecionarOperador(id: OperadorPagamento) {
+    setOperadorPagamento((atual) => (atual === id ? "" : id));
+    setTelefonePagamento("");
+    setErro("");
+    setMensagem("");
   }
 
-  function submeterPedido(event: React.FormEvent<HTMLFormElement>) {
+  function limparFormulario() {
+    setTipoLicenca("");
+    setLocalizacao("");
+    setDescricao("");
+    setOperadorPagamento("");
+    setTelefonePagamento("");
+  }
+
+  function submeterPedido(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    // Ainda não existe integração com o sistema municipal.
-    setMensagem(
-      "O formulário está validado, mas o pedido ainda não foi registado. A submissão será disponibilizada após a integração com o sistema municipal."
+    setErro("");
+    setMensagem("");
+
+    if (!conta) {
+      setErro(
+        "Não foi encontrada uma conta activa. Entre na sua conta antes de continuar."
+      );
+      return;
+    }
+
+    if (!tipoLicenca) {
+      setErro("Seleccione o tipo de licença que pretende solicitar.");
+      return;
+    }
+
+    if (!localizacao.trim()) {
+      setErro("Indique a localização do estabelecimento ou imóvel.");
+      return;
+    }
+
+    if (!descricao.trim()) {
+      setErro("Descreva o motivo e os detalhes do seu pedido.");
+      return;
+    }
+
+    if (operadorPagamento && !telefonePagamento.trim()) {
+      setErro(
+        `Introduza o número da carteira ${operadorSelecionado?.nome || ""}.`
+      );
+      return;
+    }
+
+    setAGuardar(true);
+
+    try {
+      const novoPedido: PedidoLicencaLocal = {
+        id: gerarId(),
+        contaId: conta.id,
+        nomeRequerente,
+        email,
+        telefone: contacto,
+        tipoTitular,
+        tipoLicenca,
+        localizacao: localizacao.trim(),
+        descricao: descricao.trim(),
+        ...(operadorPagamento
+          ? {
+              operadorPagamento,
+              telefonePagamento: telefonePagamento.trim(),
+            }
+          : {}),
+        estado: "Rascunho",
+        criadoEm: new Date().toISOString(),
+      };
+
+      const pedidosActualizados = [
+        novoPedido,
+        ...obterPedidos(),
+      ];
+
+      localStorage.setItem(
+        CHAVE_PEDIDOS,
+        JSON.stringify(pedidosActualizados)
+      );
+
+      setPedidos(pedidosActualizados);
+      setMensagem(
+        "Rascunho guardado com sucesso neste dispositivo. O pedido ainda não foi submetido oficialmente e não foi efectuado qualquer pagamento."
+      );
+
+      limparFormulario();
+    } catch {
+      setErro(
+        "Não foi possível guardar o rascunho. Verifique o espaço disponível no navegador e tente novamente."
+      );
+    } finally {
+      setAGuardar(false);
+    }
+  }
+
+  function formatarData(data: string) {
+    try {
+      return new Intl.DateTimeFormat("pt-MZ", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(data));
+    } catch {
+      return data;
+    }
+  }
+
+  if (!carregado) {
+    return (
+      <main className="flex min-h-[60vh] items-center justify-center bg-slate-50">
+        <div className="flex items-center gap-3 text-sm text-slate-500">
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-700 border-t-transparent" />
+          A carregar os seus dados...
+        </div>
+      </main>
     );
   }
 
   return (
-    <main className="min-h-full bg-slate-50 px-4 py-5 sm:px-6">
-      <div className="mx-auto w-full max-w-2xl">
-        {/* Cabeçalho */}
-        <header className="mb-6 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={voltar}
-            aria-label="Voltar"
-            className="flex h-10 w-10 shrink-0 items-center justify-center
-              rounded-full text-slate-700 hover:bg-slate-200"
-          >
-            <ArrowLeft size={21} />
-          </button>
+    <main className="min-h-screen bg-slate-50 pb-12">
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <Link
+          href="/inicio"
+          className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition hover:text-emerald-700"
+        >
+          <ArrowLeft size={17} />
+          Voltar ao início
+        </Link>
 
-          <div className="min-w-0 flex-1">
-            <h1 className="text-center text-lg font-bold text-slate-900">
-              Licenças
-            </h1>
-            <p className="mt-1 text-center text-xs text-slate-500">
-              Município da Namaacha
-            </p>
-          </div>
-
-          <div className="h-10 w-10 shrink-0" />
-        </header>
-
-        {novoPedido ? (
-          /* Formulário de novo pedido */
-          <section>
-            <div className="mb-5">
-              <div className="mb-3 flex h-12 w-12 items-center
-                justify-center rounded-xl bg-emerald-100 text-emerald-800">
-                <Plus size={25} />
+        <section className="mb-8 overflow-hidden rounded-3xl bg-emerald-950 text-white shadow-sm">
+          <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_auto] lg:items-center lg:p-10">
+            <div>
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-medium text-emerald-100">
+                <ShieldCheck size={15} />
+                Serviços municipais digitais
               </div>
 
-              <h2 className="text-xl font-bold text-slate-900">
-                Solicitar nova licença
-              </h2>
+              <h1 className="max-w-2xl text-2xl font-bold tracking-tight sm:text-3xl lg:text-4xl">
+                Licenças e autorizações
+              </h1>
 
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Preencha os dados para preparar o seu pedido.
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-emerald-100/85 sm:text-base">
+                Prepare os seus pedidos de licença municipal de forma
+                simples e organizada, a partir da sua conta.
               </p>
             </div>
 
-            <form
-              onSubmit={submeterPedido}
-              className="space-y-4 rounded-2xl border border-slate-100
-                bg-white p-5 shadow-sm"
+            <div className="hidden h-24 w-24 items-center justify-center rounded-3xl bg-white/10 lg:flex">
+              <ClipboardList size={46} strokeWidth={1.4} />
+            </div>
+          </div>
+        </section>
+
+        <div className="mb-6 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setVista("novo");
+              setErro("");
+              setMensagem("");
+            }}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition ${
+              vista === "novo"
+                ? "bg-emerald-700 text-white shadow-sm"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            <FileText size={17} />
+            Novo pedido
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setPedidos(obterPedidos());
+              setVista("pedidos");
+              setErro("");
+              setMensagem("");
+            }}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition ${
+              vista === "pedidos"
+                ? "bg-emerald-700 text-white shadow-sm"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            <ClipboardList size={17} />
+            Os meus pedidos
+            <span className="rounded-full bg-black/5 px-2 py-0.5 text-xs">
+              {pedidos.length}
+            </span>
+          </button>
+        </div>
+
+        {!conta && (
+          <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex gap-3">
+              <Info
+                className="mt-0.5 shrink-0 text-amber-700"
+                size={20}
+              />
+              <div>
+                <p className="font-semibold text-amber-900">
+                  Precisa de entrar na sua conta
+                </p>
+                <p className="mt-1 text-sm leading-5 text-amber-800">
+                  Entre na sua conta para preparar um pedido de licença.
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href="/entrar"
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-800"
             >
-              <div>
-                <label htmlFor="tipo" className="mb-2 block text-sm font-medium">
-                  Tipo de licença
-                </label>
+              Entrar
+              <ArrowRight size={16} />
+            </Link>
+          </div>
+        )}
 
-                <select
-                  id="tipo"
-                  required
-                  value={tipoLicenca}
-                  onChange={(e) => {
-                    setTipoLicenca(e.target.value);
-                    setMensagem("");
-                  }}
-                  className="w-full rounded-xl border border-slate-200
-                    bg-white px-3 py-3 text-sm outline-none
-                    focus:border-emerald-600"
+        {vista === "novo" ? (
+          <form
+            onSubmit={submeterPedido}
+            className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]"
+          >
+            <div className="space-y-6">
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <div className="mb-5 flex items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                    <UserRound size={22} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">
+                      Dados do requerente
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Dados associados à sua conta.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      Nome do requerente
+                    </label>
+                    <input
+                      type="text"
+                      value={nomeRequerente}
+                      readOnly
+                      placeholder="Nome associado à conta"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      Tipo de titular
+                    </label>
+                    <input
+                      type="text"
+                      value={tipoTitular}
+                      readOnly
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm capitalize text-slate-600 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      Email
+                    </label>
+                    <div className="relative">
+                      <Search
+                        size={17}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                      <input
+                        type="email"
+                        value={email}
+                        readOnly
+                        placeholder="Email da conta"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm text-slate-600 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      Telefone de contacto
+                    </label>
+                    <div className="relative">
+                      <Phone
+                        size={17}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                      <input
+                        type="tel"
+                        value={contacto}
+                        readOnly
+                        placeholder="Telefone da conta"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm text-slate-600 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <div className="mb-5 flex items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+                    <ClipboardList size={22} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">
+                      Detalhes do pedido
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Seleccione a licença e descreva o que pretende.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-5">
+                  <div>
+                    <label
+                      htmlFor="tipoLicenca"
+                      className="mb-2 block text-sm font-semibold text-slate-700"
+                    >
+                      Tipo de licença <span className="text-red-500">*</span>
+                    </label>
+
+                    <select
+                      id="tipoLicenca"
+                      required
+                      value={tipoLicenca}
+                      onChange={(event) =>
+                        setTipoLicenca(
+                          event.target.value as TipoLicenca | ""
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10"
+                    >
+                      <option value="">Seleccione o tipo de licença</option>
+                      {licencas.map((licenca) => (
+                        <option key={licenca.id} value={licenca.id}>
+                          {licenca.nome}
+                        </option>
+                      ))}
+                    </select>
+
+                    {licencaSelecionada && (
+                      <p className="mt-2 text-sm leading-5 text-slate-500">
+                        {licencaSelecionada.descricao}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="localizacao"
+                      className="mb-2 block text-sm font-semibold text-slate-700"
+                    >
+                      Localização do estabelecimento ou imóvel{" "}
+                      <span className="text-red-500">*</span>
+                    </label>
+
+                    <div className="relative">
+                      <MapPin
+                        size={18}
+                        className="absolute left-3 top-3.5 text-slate-400"
+                      />
+                      <input
+                        id="localizacao"
+                        type="text"
+                        required
+                        value={localizacao}
+                        onChange={(event) =>
+                          setLocalizacao(event.target.value)
+                        }
+                        placeholder="Ex.: Bairro, rua, parcela ou referência"
+                        className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="descricao"
+                      className="mb-2 block text-sm font-semibold text-slate-700"
+                    >
+                      Descrição do pedido{" "}
+                      <span className="text-red-500">*</span>
+                    </label>
+
+                    <textarea
+                      id="descricao"
+                      required
+                      rows={5}
+                      value={descricao}
+                      onChange={(event) =>
+                        setDescricao(event.target.value)
+                      }
+                      placeholder="Explique o motivo do pedido e indique os detalhes relevantes..."
+                      className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+                    <Smartphone size={19} />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900">
+                      Carteira móvel
+                    </h2>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      Opcional. Seleccione uma rede para indicar o número da
+                      carteira.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
+                  {operadoresPagamento.map((operador) => {
+                    const seleccionado =
+                      operadorPagamento === operador.id;
+
+                    return (
+                      <button
+                        key={operador.id}
+                        type="button"
+                        aria-pressed={seleccionado}
+                        onClick={() =>
+                          selecionarOperador(operador.id)
+                        }
+                        className={`relative flex min-w-0 flex-col items-center rounded-xl border p-2 text-center transition sm:p-3 ${
+                          seleccionado
+                            ? "border-emerald-600 bg-emerald-50 ring-2 ring-emerald-600/15"
+                            : "border-slate-200 bg-white hover:border-emerald-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        {seleccionado && (
+                          <CheckCircle2
+                            size={15}
+                            className="absolute right-1 top-1 text-emerald-700 sm:right-2 sm:top-2"
+                          />
+                        )}
+
+                        <div
+                          className={`mb-2 flex h-8 w-8 items-center justify-center rounded-lg sm:h-9 sm:w-9 ${operador.fundo} ${operador.cor}`}
+                        >
+                          <Smartphone size={18} />
+                        </div>
+
+                        <span className="text-xs font-bold text-slate-900 sm:text-sm">
+                          {operador.nome}
+                        </span>
+
+                        <span className="mt-1 hidden text-center text-[10px] leading-4 text-slate-500 sm:block">
+                          {operador.descricao}
+                        </span>
+
+                        <span
+                          className={`mt-2 text-[10px] font-semibold sm:text-xs ${
+                            seleccionado
+                              ? "text-emerald-700"
+                              : "text-slate-400"
+                          }`}
+                        >
+                          {seleccionado ? "Seleccionado" : "Seleccionar"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {operadorPagamento && (
+                  <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/50 p-3 sm:p-4">
+                    <label
+                      htmlFor="telefonePagamento"
+                      className="mb-2 block text-sm font-semibold text-slate-700"
+                    >
+                      Número da carteira — {operadorSelecionado?.nome}
+                    </label>
+
+                    <input
+                      id="telefonePagamento"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      value={telefonePagamento}
+                      onChange={(event) =>
+                        setTelefonePagamento(event.target.value)
+                      }
+                      placeholder={
+                        operadorPagamento === "mpesa"
+                          ? "M-Pesa: ex. 84 123 4567 ou 85 123 4567"
+                          : operadorPagamento === "emola"
+                            ? "e-Mola: introduza o número da carteira"
+                            : "mKesh: introduza o número da carteira"
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10"
+                    />
+
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      {operadorPagamento === "mpesa"
+                        ? "Introduza o número associado à sua carteira M-Pesa."
+                        : operadorPagamento === "emola"
+                          ? "Introduza o número associado à sua carteira e-Mola."
+                          : "Introduza o número associado à sua carteira mKesh."}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOperadorPagamento("");
+                        setTelefonePagamento("");
+                      }}
+                      className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-red-600"
+                    >
+                      <X size={14} />
+                      Remover carteira seleccionada
+                    </button>
+                  </div>
+                )}
+
+                {!operadorPagamento && (
+                  <p className="mt-3 text-xs leading-5 text-slate-500">
+                    Pode continuar sem configurar uma carteira móvel.
+                  </p>
+                )}
+              </section>
+
+              {erro && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
                 >
-                  <option value="">Seleccione uma licença</option>
-                  {licencas.map((licenca) => (
-                    <option key={licenca.id} value={licenca.id}>
-                      {licenca.titulo}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="requerente" className="mb-2 block text-sm font-medium">
-                  Nome do requerente
-                </label>
-                <input
-                  id="requerente"
-                  required
-                  value={nomeRequerente}
-                  onChange={(e) => {
-                    setNomeRequerente(e.target.value);
-                    setMensagem("");
-                  }}
-                  placeholder="Nome completo ou denominação da empresa"
-                  className="w-full rounded-xl border border-slate-200
-                    px-3 py-3 text-sm outline-none focus:border-emerald-600"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="contacto" className="mb-2 block text-sm font-medium">
-                  Contacto telefónico
-                </label>
-                <input
-                  id="contacto"
-                  type="tel"
-                  required
-                  value={contacto}
-                  onChange={(e) => {
-                    setContacto(e.target.value);
-                    setMensagem("");
-                  }}
-                  placeholder="Número de telefone"
-                  className="w-full rounded-xl border border-slate-200
-                    px-3 py-3 text-sm outline-none focus:border-emerald-600"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="localizacao" className="mb-2 block text-sm font-medium">
-                  Localização da actividade ou imóvel
-                </label>
-                <input
-                  id="localizacao"
-                  required
-                  value={localizacao}
-                  onChange={(e) => {
-                    setLocalizacao(e.target.value);
-                    setMensagem("");
-                  }}
-                  placeholder="Bairro, rua ou referência local"
-                  className="w-full rounded-xl border border-slate-200
-                    px-3 py-3 text-sm outline-none focus:border-emerald-600"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="descricao" className="mb-2 block text-sm font-medium">
-                  Descrição do pedido
-                </label>
-                <textarea
-                  id="descricao"
-                  required
-                  rows={4}
-                  value={descricao}
-                  onChange={(e) => {
-                    setDescricao(e.target.value);
-                    setMensagem("");
-                  }}
-                  placeholder="Descreva brevemente a licença pretendida..."
-                  className="w-full resize-y rounded-xl border border-slate-200
-                    px-3 py-3 text-sm outline-none focus:border-emerald-600"
-                />
-              </div>
+                  <Info className="mt-0.5 shrink-0" size={19} />
+                  <p>{erro}</p>
+                </div>
+              )}
 
               {mensagem && (
                 <div
                   role="status"
-                  className="rounded-xl border border-amber-200
-                    bg-amber-50 p-4 text-sm leading-6 text-amber-900"
+                  className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-800"
                 >
-                  {mensagem}
+                  <CheckCircle2
+                    className="mt-0.5 shrink-0"
+                    size={19}
+                  />
+                  <p>{mensagem}</p>
                 </div>
               )}
 
-              <button
-                type="submit"
-                className="flex w-full items-center justify-center gap-2
-                  rounded-xl bg-emerald-700 px-4 py-3.5 text-sm
-                  font-semibold text-white transition hover:bg-emerald-800"
-              >
-                <FileText size={18} />
-                Validar dados do pedido
-              </button>
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    limparFormulario();
+                    setErro("");
+                    setMensagem("");
+                  }}
+                  className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                >
+                  Limpar formulário
+                </button>
 
-              <p className="text-xs leading-5 text-slate-500">
-                O preenchimento não constitui uma submissão oficial.
-                O pedido deverá ser registado no sistema municipal.
-              </p>
-            </form>
-          </section>
-        ) : seleccionada ? (
-          /* Detalhes da licença */
-          <section className="space-y-4">
-            <div className="rounded-2xl border border-slate-100
-              bg-white p-5 shadow-sm">
-              <div className={`mb-4 flex h-14 w-14 items-center
-                justify-center rounded-2xl ${seleccionada.fundo}
-                ${seleccionada.cor}`}>
-                <seleccionada.icon size={28} />
+                <button
+                  type="submit"
+                  disabled={!conta || aGuardar}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {aGuardar ? (
+                    <>
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      A guardar...
+                    </>
+                  ) : (
+                    <>
+                      Guardar rascunho
+                      <ArrowRight size={17} />
+                    </>
+                  )}
+                </button>
               </div>
+            </div>
 
-              <h2 className="text-xl font-bold text-slate-900">
-                {seleccionada.titulo}
-              </h2>
+            <aside className="space-y-5">
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h2 className="font-bold text-slate-900">
+                  Resumo do pedido
+                </h2>
 
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                {seleccionada.detalhe}
-              </p>
+                <div className="mt-4 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                      <FileText size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-slate-500">
+                        Tipo de licença
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-800">
+                        {licencaSelecionada?.nome || "Ainda não seleccionado"}
+                      </p>
+                    </div>
+                  </div>
 
-              <div className="mt-6">
-                <h3 className="font-semibold text-slate-900">
-                  Documentação a preparar
-                </h3>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+                      <MapPin size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-slate-500">Localização</p>
+                      <p className="mt-1 break-words text-sm font-semibold text-slate-800">
+                        {localizacao || "Ainda não indicada"}
+                      </p>
+                    </div>
+                  </div>
 
-                <ul className="mt-3 space-y-3">
-                  {seleccionada.requisitos.map((requisito) => (
-                    <li key={requisito} className="flex gap-3 text-sm
-                      leading-5 text-slate-600">
-                      <CheckCircle2
-                        size={18}
-                        className="shrink-0 text-emerald-700"
-                      />
-                      {requisito}
-                    </li>
-                  ))}
-                </ul>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+                      <Smartphone size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-slate-500">
+                        Carteira móvel
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-800">
+                        {operadorSelecionado?.nome || "Não configurada"}
+                      </p>
+                      {telefonePagamento && (
+                        <p className="mt-1 break-words text-xs text-slate-500">
+                          {telefonePagamento}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
 
-                <p className="mt-4 text-xs leading-5 text-slate-500">
-                  A lista é indicativa. Os requisitos oficiais devem
-                  ser confirmados junto do Município, conforme o tipo
-                  de actividade e a legislação aplicável.
+              <section className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+                <div className="flex items-start gap-3">
+                  <Info
+                    size={20}
+                    className="mt-0.5 shrink-0 text-blue-700"
+                  />
+                  <div>
+                    <h3 className="font-semibold text-blue-950">
+                      Antes de continuar
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-blue-900/80">
+                      Nesta versão, o pedido é guardado localmente no
+                      navegador. Ainda não é enviado aos serviços municipais
+                      e a selecção da carteira não inicia qualquer pagamento.
+                    </p>
+                  </div>
+                </div>
+              </section>
+            </aside>
+          </form>
+        ) : (
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Os meus pedidos
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Consulte os rascunhos guardados neste dispositivo.
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setTipoLicenca(seleccionada.id);
-                  setSeleccionada(null);
-                  setNovoPedido(true);
-                }}
-                className="mt-6 flex w-full items-center justify-center
-                  gap-2 rounded-xl bg-emerald-700 px-4 py-3
-                  text-sm font-semibold text-white hover:bg-emerald-800"
-              >
-                <Plus size={18} />
-                Iniciar pedido
-              </button>
+              <div className="relative w-full sm:max-w-xs">
+                <Search
+                  size={17}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  type="search"
+                  value={pesquisa}
+                  onChange={(event) => setPesquisa(event.target.value)}
+                  placeholder="Pesquisar pedidos..."
+                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm outline-none focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10"
+                />
+              </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setSeleccionada(null)}
-              className="w-full rounded-xl border border-slate-200
-                bg-white px-4 py-3 text-sm font-semibold text-slate-700
-                hover:bg-slate-100"
-            >
-              Voltar às licenças
-            </button>
-          </section>
-        ) : (
-          /* Página principal */
-          <>
-            <section className="mb-5">
-              <h2 className="text-base font-bold text-slate-900">
-                As suas licenças
-              </h2>
-
-              <p className="mt-1 text-sm leading-6 text-slate-500">
-                Solicite, consulte e acompanhe as suas licenças municipais.
-              </p>
-
-              <button
-                type="button"
-                onClick={() => setNovoPedido(true)}
-                className="mt-4 flex w-full items-center justify-center
-                  gap-2 rounded-xl bg-emerald-700 px-4 py-3.5
-                  text-sm font-semibold text-white shadow-sm
-                  transition hover:bg-emerald-800"
-              >
-                <Plus size={19} />
-                Solicitar Nova Licença
-              </button>
-            </section>
-
-            <div className="mb-4 flex items-center gap-3 rounded-xl
-              border border-slate-200 bg-white px-4 py-3
-              focus-within:border-emerald-600">
-              <Search size={19} className="shrink-0 text-slate-400" />
-              <input
-                type="search"
-                value={pesquisa}
-                onChange={(e) => setPesquisa(e.target.value)}
-                placeholder="Pesquisar licença..."
-                aria-label="Pesquisar licença"
-                className="w-full bg-transparent text-sm outline-none
-                  placeholder:text-slate-400"
-              />
-              {pesquisa && (
+            {pedidosFiltrados.length === 0 ? (
+              <div className="py-14 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                  <ClipboardList size={27} />
+                </div>
+                <h3 className="mt-4 font-semibold text-slate-900">
+                  Nenhum pedido encontrado
+                </h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Os pedidos guardados aparecerão aqui.
+                </p>
                 <button
                   type="button"
-                  onClick={() => setPesquisa("")}
-                  aria-label="Limpar pesquisa"
-                  className="text-slate-400 hover:text-slate-700"
+                  onClick={() => setVista("novo")}
+                  className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800"
                 >
-                  <X size={18} />
+                  Criar pedido
+                  <ArrowRight size={16} />
                 </button>
-              )}
-            </div>
-
-            <section aria-label="Tipos de licença">
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-800">
-                  Tipos de licença
-                </h3>
-                <span className="text-xs text-slate-500">
-                  {listaFiltrada.length} serviços
-                </span>
               </div>
-
-              <div className="space-y-3">
-                {listaFiltrada.map((licenca) => {
-                  const Icon = licenca.icon;
+            ) : (
+              <div className="mt-6 space-y-3">
+                {pedidosFiltrados.map((pedido) => {
+                  const licenca = licencas.find(
+                    (item) => item.id === pedido.tipoLicenca
+                  );
 
                   return (
-                    <button
-                      key={licenca.id}
-                      type="button"
-                      onClick={() => setSeleccionada(licenca)}
-                      className="group flex w-full items-center gap-3
-                        rounded-2xl border border-slate-100 bg-white
-                        p-3 text-left shadow-sm transition
-                        hover:border-emerald-200 hover:shadow-md"
+                    <article
+                      key={pedido.id}
+                      className="rounded-2xl border border-slate-200 p-4 transition hover:border-emerald-200 sm:p-5"
                     >
-                      <span className={`flex h-12 w-12 shrink-0
-                        items-center justify-center rounded-xl
-                        ${licenca.fundo} ${licenca.cor}`}>
-                        <Icon size={23} strokeWidth={2.2} />
-                      </span>
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex min-w-0 gap-3">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                            <ClipboardList size={21} />
+                          </div>
 
-                      <span className="min-w-0 flex-1 py-1">
-                        <span className="block text-sm font-semibold
-                          leading-5 text-slate-900">
-                          {licenca.titulo}
-                        </span>
-                        <span className="mt-1 block text-xs
-                          leading-5 text-slate-500">
-                          {licenca.descricao}
-                        </span>
-                      </span>
+                          <div className="min-w-0">
+                            <h3 className="font-bold text-slate-900">
+                              {licenca?.nome || pedido.tipoLicenca}
+                            </h3>
+                            <p className="mt-1 break-words text-sm text-slate-500">
+                              <MapPin
+                                size={14}
+                                className="mr-1 inline-block"
+                              />
+                              {pedido.localizacao}
+                            </p>
+                            <p className="mt-2 text-xs text-slate-400">
+                              Guardado em {formatarData(pedido.criadoEm)}
+                            </p>
+                          </div>
+                        </div>
 
-                      <ArrowRight
-                        size={18}
-                        className="shrink-0 text-slate-400
-                          transition group-hover:translate-x-0.5
-                          group-hover:text-emerald-700"
-                      />
-                    </button>
+                        <span className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          {pedido.estado}
+                        </span>
+                      </div>
+
+                      <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                        {pedido.descricao}
+                      </p>
+
+                      {pedido.operadorPagamento && (
+                        <div className="mt-4 flex items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+                          <Smartphone
+                            size={17}
+                            className="shrink-0 text-slate-400"
+                          />
+                          <span>
+                            {operadoresPagamento.find(
+                              (op) => op.id === pedido.operadorPagamento
+                            )?.nome || pedido.operadorPagamento}
+                            {pedido.telefonePagamento
+                              ? ` · ${pedido.telefonePagamento}`
+                              : ""}
+                          </span>
+                        </div>
+                      )}
+                    </article>
                   );
                 })}
               </div>
-
-              {listaFiltrada.length === 0 && (
-                <div className="rounded-2xl border border-dashed
-                  border-slate-300 bg-white px-5 py-10 text-center">
-                  <Search size={28} className="mx-auto text-slate-400" />
-                  <p className="mt-3 text-sm font-semibold text-slate-800">
-                    Nenhuma licença encontrada
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Tente pesquisar com outro termo.
-                  </p>
-                </div>
-              )}
-            </section>
-
-            <div className="mt-6 flex items-start gap-3 rounded-xl
-              border border-emerald-100 bg-emerald-50 p-4">
-              <ShieldCheck
-                size={19}
-                className="mt-0.5 shrink-0 text-emerald-700"
-              />
-              <p className="text-xs leading-5 text-emerald-900">
-                A emissão e a renovação de licenças dependem da
-                verificação dos requisitos e da aprovação pelos
-                serviços municipais competentes.
-              </p>
-            </div>
-          </>
+            )}
+          </section>
         )}
       </div>
     </main>
