@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { iniciarSessao } from "@/lib/auth-local";
 
 const campoClass =
-  "h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10 disabled:opacity-60";
+  "h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10 disabled:cursor-not-allowed disabled:opacity-60";
 
 export function LoginForm() {
   const router = useRouter();
@@ -16,13 +16,19 @@ export function LoginForm() {
   const [erro, setErro] = useState("");
   const [aEntrar, setAEntrar] = useState(false);
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(
+    e: FormEvent<HTMLFormElement>
+  ) {
     e.preventDefault();
 
     if (aEntrar) return;
 
-    if (!identificador.trim() || !password) {
-      setErro("Introduza o email ou número de telefone e a palavra-passe.");
+    const login = identificador.trim();
+
+    if (!login || !password) {
+      setErro(
+        "Introduza o email ou número de telefone e a palavra-passe."
+      );
       return;
     }
 
@@ -30,21 +36,44 @@ export function LoginForm() {
     setAEntrar(true);
 
     try {
-      await iniciarSessao(identificador.trim(), password);
-      router.push("/inicio");
+      // Validar as credenciais e criar a sessão.
+      const sessao = await iniciarSessao(login, password);
+
+      if (!sessao?.id) {
+        throw new Error(
+          "Não foi possível confirmar a sessão. Tente novamente."
+        );
+      }
+
+      // Confirmar que a sessão ficou efectivamente guardada.
+      const { obterSessao } = await import("@/lib/auth-local");
+      const sessaoActual = obterSessao();
+
+      if (!sessaoActual || sessaoActual.id !== sessao.id) {
+        throw new Error(
+          "A sessão não foi confirmada. Volte a introduzir os seus dados."
+        );
+      }
+
+      // Navegar apenas depois da confirmação.
+      router.replace("/inicio");
+      router.refresh();
     } catch (error) {
       setErro(
         error instanceof Error
           ? error.message
           : "Não foi possível iniciar sessão."
       );
-    } finally {
       setAEntrar(false);
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-5"
+      noValidate
+    >
       <div>
         <label
           htmlFor="identificador"
@@ -67,7 +96,8 @@ export function LoginForm() {
         />
 
         <p className="mt-2 text-xs leading-5 text-slate-500">
-          Pode utilizar o email ou o número de telefone associado à sua conta municipal.
+          Utilize o email ou o número de telefone associado
+          à sua conta municipal.
         </p>
       </div>
 
@@ -96,6 +126,7 @@ export function LoginForm() {
       {erro && (
         <p
           role="alert"
+          aria-live="polite"
           className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
         >
           {erro}

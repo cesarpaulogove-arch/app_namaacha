@@ -2,7 +2,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -26,16 +25,15 @@ type SessaoPerfil = {
 };
 
 export default function PerfilPage() {
-  const router = useRouter();
-
   const [sessao, setSessao] = useState<SessaoPerfil | null>(null);
   const [aCarregar, setACarregar] = useState(true);
+  const [erroSessao, setErroSessao] = useState("");
 
   useEffect(() => {
     const sessaoAtual = obterSessao();
 
     if (!sessaoAtual) {
-      router.replace("/entrar");
+      window.location.replace("/entrar");
       return;
     }
 
@@ -46,34 +44,59 @@ export default function PerfilPage() {
     });
 
     setACarregar(false);
-  }, [router]);
+  }, []);
 
   function sair() {
-    terminarSessao();
-    router.replace("/entrar");
+    try {
+      // Terminar a autenticação sem apagar os dados da conta.
+      terminarSessao();
+
+      // Limpar os dados apresentados no perfil.
+      setSessao(null);
+      setACarregar(true);
+      setErroSessao("");
+
+      // Substituir a página actual pela página de entrada.
+      window.location.replace("/entrar");
+    } catch (error) {
+      setErroSessao(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível terminar a sessão."
+      );
+    }
   }
 
   if (aCarregar || !sessao) {
     return (
       <main className="mx-auto w-full max-w-2xl px-4 py-12">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 w-40 rounded-lg bg-slate-200" />
-          <div className="h-52 rounded-2xl bg-slate-200" />
-          <div className="h-32 rounded-2xl bg-slate-200" />
-          <div className="h-64 rounded-2xl bg-slate-200" />
-        </div>
+        {erroSessao ? (
+          <div
+            role="alert"
+            className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+          >
+            {erroSessao}
+          </div>
+        ) : (
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 w-40 rounded-lg bg-slate-200" />
+            <div className="h-52 rounded-2xl bg-slate-200" />
+            <div className="h-32 rounded-2xl bg-slate-200" />
+            <div className="h-64 rounded-2xl bg-slate-200" />
+          </div>
+        )}
       </main>
     );
   }
 
   return (
     <main className="mx-auto w-full max-w-2xl space-y-6 px-4 py-5 pb-10 sm:py-8">
-      {/* Cabeçalho */}
+      {/* Cabeçalho sem o ícone lateral de perfil */}
       <header className="flex items-center gap-3">
         <Link
           href="/inicio"
           aria-label="Voltar ao início"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
         >
           <ArrowLeft size={20} />
         </Link>
@@ -87,13 +110,8 @@ export default function PerfilPage() {
             O meu perfil
           </h1>
         </div>
-
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
-          <UserRound size={21} />
-        </div>
       </header>
 
-      {/* Resumo do perfil */}
       <ProfileHeader
         nome={sessao.nome}
         email={sessao.email}
@@ -117,6 +135,7 @@ export default function PerfilPage() {
 
           <UserRound
             size={22}
+            aria-hidden="true"
             className="shrink-0 text-emerald-700"
           />
         </div>
@@ -149,7 +168,7 @@ export default function PerfilPage() {
         </p>
       </section>
 
-      {/* Acesso directo ao histórico */}
+      {/* Histórico de actividades */}
       <section
         id="historico"
         className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm"
@@ -166,7 +185,7 @@ export default function PerfilPage() {
 
         <Link
           href="/dashboard"
-          className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-emerald-300 hover:bg-emerald-50/50"
+          className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-4 transition hover:border-emerald-300 hover:bg-emerald-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
         >
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
@@ -186,15 +205,16 @@ export default function PerfilPage() {
 
           <ArrowRight
             size={20}
+            aria-hidden="true"
             className="shrink-0 text-slate-400"
           />
         </Link>
       </section>
 
-      {/* Menu do perfil */}
+      {/* Opções adicionais do perfil */}
       <ProfileMenu />
 
-      {/* Segurança e sessão */}
+      {/* Segurança e terminar sessão */}
       <section
         id="seguranca"
         className="rounded-2xl border border-red-100 bg-white p-5 shadow-sm"
@@ -212,14 +232,13 @@ export default function PerfilPage() {
         <button
           type="button"
           onClick={sair}
-          className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100"
+          className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
         >
           <LogOut size={18} />
           Terminar sessão
         </button>
       </section>
 
-      {/* Rodapé */}
       <footer className="pb-4 text-center text-xs text-slate-400">
         Município da Namaacha · Serviços Digitais
       </footer>

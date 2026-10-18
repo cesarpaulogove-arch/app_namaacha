@@ -63,8 +63,17 @@ export type SessaoLocal = {
   email: string;
 };
 
+// ======================================================
+// CHAVES DE ARMAZENAMENTO
+// ======================================================
+
 const CHAVE_CONTAS = "namaacha_contas";
 const CHAVE_SESSAO = "namaacha_sessao";
+const EVENTO_SESSAO_TERMINADA = "namaacha:sessao-terminada";
+
+// ======================================================
+// FUNÇÕES AUXILIARES
+// ======================================================
 
 function texto(valor: unknown): string {
   return typeof valor === "string" ? valor.trim() : "";
@@ -88,28 +97,6 @@ function operadorValido(
   );
 }
 
-function normalizarDocumento(
-  valor: unknown
-): DocumentoCarregado | null {
-  if (!valor || typeof valor !== "object") {
-    return null;
-  }
-
-  const item = valor as Record<string, unknown>;
-  const nome = texto(item.nome);
-  const tipo = texto(item.tipo);
-  const dados =
-    typeof item.dados === "string" ? item.dados : "";
-  const tamanho =
-    typeof item.tamanho === "number" ? item.tamanho : 0;
-
-  if (!nome || !tipo || !dados) {
-    return null;
-  }
-
-  return { nome, tipo, tamanho, dados };
-}
-
 function criarId(): string {
   if (
     typeof crypto !== "undefined" &&
@@ -120,6 +107,42 @@ function criarId(): string {
 
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
+
+function normalizarDocumento(
+  valor: unknown
+): DocumentoCarregado | null {
+  if (!valor || typeof valor !== "object") {
+    return null;
+  }
+
+  const item = valor as Record<string, unknown>;
+
+  const nome = texto(item.nome);
+  const tipo = texto(item.tipo);
+  const dados =
+    typeof item.dados === "string" ? item.dados : "";
+  const tamanho =
+    typeof item.tamanho === "number" &&
+    Number.isFinite(item.tamanho)
+      ? item.tamanho
+      : 0;
+
+  if (!nome || !tipo || !dados) {
+    return null;
+  }
+
+  return {
+    nome,
+    tipo,
+    tamanho,
+    dados,
+  };
+}
+
+// ======================================================
+// NORMALIZAR CONTA
+// Compatibilidade com contas criadas por versões anteriores.
+// ======================================================
 
 function normalizarConta(valor: unknown): ContaLocal {
   const item =
@@ -152,12 +175,13 @@ function normalizarConta(valor: unknown): ContaLocal {
   const nome = texto(item.nome);
 
   return {
-    id: texto(item.id) || criarId(),
+    id: texto(item.id),
     nome,
     email: texto(item.email).toLowerCase(),
     telefone: texto(item.telefone),
     passwordHash: texto(item.passwordHash),
     criadoEm: texto(item.criadoEm),
+
     perfil: {
       tipo: tipoValido(perfilOriginal.tipo),
       nome: texto(perfilOriginal.nome) || nome,
@@ -175,9 +199,15 @@ function normalizarConta(valor: unknown): ContaLocal {
         perfilOriginal.documentoNuit
       ),
     },
+
     carteiras,
   };
 }
+
+// ======================================================
+// LER CONTAS
+// Não inicia sessão e não apaga dados da conta.
+// ======================================================
 
 function obterContas(): ContaLocal[] {
   if (typeof window === "undefined") {
@@ -194,23 +224,38 @@ function obterContas(): ContaLocal[] {
     const contas: unknown = JSON.parse(dados);
 
     if (!Array.isArray(contas)) {
+      console.error("O registo local de contas não é válido.");
       return [];
     }
 
-    return contas.map(normalizarConta);
+    return contas
+      .filter(
+        (conta) => !!conta && typeof conta === "object"
+      )
+      .map(normalizarConta)
+      .filter((conta) => conta.id !== "");
   } catch (erro) {
     console.error("Erro ao ler contas locais:", erro);
     return [];
   }
 }
 
+// ======================================================
+// GUARDAR CONTAS
+// ======================================================
+
 function guardarContas(contas: ContaLocal[]): void {
   if (typeof window === "undefined") {
-    throw new Error("O armazenamento local não está disponível.");
+    throw new Error(
+      "O armazenamento local não está disponível."
+    );
   }
 
   try {
-    localStorage.setItem(CHAVE_CONTAS, JSON.stringify(contas));
+    localStorage.setItem(
+      CHAVE_CONTAS,
+      JSON.stringify(contas)
+    );
   } catch (erro) {
     console.error("Erro ao guardar contas:", erro);
 
@@ -220,13 +265,18 @@ function guardarContas(contas: ContaLocal[]): void {
   }
 }
 
+// ======================================================
+// GERAR HASH DA PALAVRA-PASSE
+// Nota: adequado apenas ao protótipo local.
+// ======================================================
+
 async function gerarHash(password: string): Promise<string> {
   if (
     typeof crypto === "undefined" ||
     !crypto.subtle
   ) {
     throw new Error(
-      "Não foi possível proteger a palavra-passe neste navegador."
+      "Não foi possível processar a palavra-passe neste navegador. Utilize um contexto seguro HTTPS ou localhost."
     );
   }
 
@@ -240,14 +290,15 @@ async function gerarHash(password: string): Promise<string> {
 
 // ======================================================
 // REGISTAR CONTA
-// Os dados da conta continuam guardados no localStorage.
 // ======================================================
 
 export async function registarConta(
   dados: DadosRegisto
 ): Promise<ContaLocal> {
   if (typeof window === "undefined") {
-    throw new Error("O registo só pode ser feito no navegador.");
+    throw new Error(
+      "O registo só pode ser feito no navegador."
+    );
   }
 
   const nome = texto(dados.nome);
@@ -263,7 +314,9 @@ export async function registarConta(
   }
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new Error("Introduza um endereço de email válido.");
+    throw new Error(
+      "Introduza um endereço de email válido."
+    );
   }
 
   if (password.length < 8) {
@@ -275,7 +328,9 @@ export async function registarConta(
   const contas = obterContas();
 
   if (contas.some((conta) => conta.email === email)) {
-    throw new Error("Já existe uma conta com este email.");
+    throw new Error(
+      "Já existe uma conta com este email."
+    );
   }
 
   const telefoneNormalizado = telefone.replace(/\s+/g, "");
@@ -297,7 +352,9 @@ export async function registarConta(
   const telefoneCarteira = texto(dados.telefoneCarteira);
 
   const carteiras: CarteiraMovel[] =
-    operador && operadorValido(operador) && telefoneCarteira
+    operador &&
+    operadorValido(operador) &&
+    telefoneCarteira
       ? [
           {
             id: criarId(),
@@ -315,6 +372,7 @@ export async function registarConta(
     telefone,
     passwordHash: await gerarHash(password),
     criadoEm: new Date().toISOString(),
+
     perfil: {
       tipo,
       nome,
@@ -326,12 +384,42 @@ export async function registarConta(
       tipoInstituicao: texto(dados.tipoInstituicao),
       endereco: texto(dados.endereco),
       documentoBI: normalizarDocumento(dados.documentoBI),
-      documentoNuit: normalizarDocumento(dados.documentoNuit),
+      documentoNuit: normalizarDocumento(
+        dados.documentoNuit
+      ),
     },
+
     carteiras,
   };
 
-  guardarContas([...contas, novaConta]);
+  // Voltar a ler as contas antes de guardar, para evitar
+  // substituir dados obtidos anteriormente no mesmo fluxo.
+  const contasActualizadas = obterContas();
+
+  if (
+    contasActualizadas.some(
+      (conta) => conta.email === email
+    )
+  ) {
+    throw new Error(
+      "Já existe uma conta com este email."
+    );
+  }
+
+  if (
+    telefoneNormalizado &&
+    contasActualizadas.some(
+      (conta) =>
+        conta.telefone.replace(/\s+/g, "") ===
+        telefoneNormalizado
+    )
+  ) {
+    throw new Error(
+      "Já existe uma conta com este número de telefone."
+    );
+  }
+
+  guardarContas([...contasActualizadas, novaConta]);
 
   return novaConta;
 }
@@ -339,7 +427,7 @@ export async function registarConta(
 // ======================================================
 // INICIAR SESSÃO
 // Aceita email ou número de telefone.
-// A sessão fica no sessionStorage, não nas contas.
+// Guarda a sessão exclusivamente no sessionStorage.
 // ======================================================
 
 export async function iniciarSessao(
@@ -347,14 +435,15 @@ export async function iniciarSessao(
   password: string
 ): Promise<SessaoLocal> {
   if (typeof window === "undefined") {
-    throw new Error("O início de sessão só funciona no navegador.");
+    throw new Error(
+      "O início de sessão só funciona no navegador."
+    );
   }
 
   const valor = texto(identificador).toLowerCase();
-  const telefoneIntroduzido = texto(identificador).replace(
-    /\s+/g,
-    ""
-  );
+  const telefoneIntroduzido = texto(
+    identificador
+  ).replace(/\s+/g, "");
 
   if (!valor || !password) {
     throw new Error(
@@ -366,11 +455,15 @@ export async function iniciarSessao(
 
   const conta = contas.find((item) => {
     const email = texto(item.email).toLowerCase();
-    const telefone = texto(item.telefone).replace(/\s+/g, "");
+    const telefone = texto(item.telefone).replace(
+      /\s+/g,
+      ""
+    );
 
     return (
       (email !== "" && email === valor) ||
-      (telefone !== "" && telefone === telefoneIntroduzido)
+      (telefone !== "" &&
+        telefone === telefoneIntroduzido)
     );
   });
 
@@ -393,16 +486,48 @@ export async function iniciarSessao(
   };
 
   try {
-    // Remover eventual sessão antiga persistida.
+    // Eliminar sessões anteriores antes de autenticar.
+    sessionStorage.removeItem(CHAVE_SESSAO);
     localStorage.removeItem(CHAVE_SESSAO);
 
-    // Guardar a sessão apenas no armazenamento temporário.
     sessionStorage.setItem(
       CHAVE_SESSAO,
       JSON.stringify(sessao)
     );
+
+    // Confirmar que a sessão foi efectivamente guardada.
+    const sessaoGuardada =
+      sessionStorage.getItem(CHAVE_SESSAO);
+
+    if (!sessaoGuardada) {
+      throw new Error(
+        "A sessão não foi guardada."
+      );
+    }
+
+    const sessaoVerificada: unknown =
+      JSON.parse(sessaoGuardada);
+
+    if (
+      !sessaoVerificada ||
+      typeof sessaoVerificada !== "object" ||
+      (sessaoVerificada as Record<string, unknown>).id !==
+        conta.id
+    ) {
+      sessionStorage.removeItem(CHAVE_SESSAO);
+
+      throw new Error(
+        "Não foi possível validar a sessão criada."
+      );
+    }
   } catch (erro) {
-    console.error("Erro ao guardar a sessão:", erro);
+    try {
+      sessionStorage.removeItem(CHAVE_SESSAO);
+    } catch {
+      // Não substituir o erro original.
+    }
+
+    console.error("Erro ao iniciar sessão:", erro);
 
     throw new Error(
       "Não foi possível iniciar a sessão neste dispositivo."
@@ -414,7 +539,8 @@ export async function iniciarSessao(
 
 // ======================================================
 // OBTER SESSÃO
-// Valida se a sessão existe e se a conta continua registada.
+// Não inicia sessão automaticamente.
+// Não recupera sessões do localStorage.
 // ======================================================
 
 export function obterSessao(): SessaoLocal | null {
@@ -423,8 +549,7 @@ export function obterSessao(): SessaoLocal | null {
   }
 
   try {
-    // Eliminar apenas a sessão antiga do localStorage.
-    // Não mexe nas contas nem nos documentos.
+    // Remover uma eventual sessão antiga persistida.
     localStorage.removeItem(CHAVE_SESSAO);
 
     const dados = sessionStorage.getItem(CHAVE_SESSAO);
@@ -448,12 +573,11 @@ export function obterSessao(): SessaoLocal | null {
       return null;
     }
 
-    // Confirmar que a conta ainda existe.
     const conta = obterContas().find(
-      (item) => item.id === id
+      (conta) => conta.id === id
     );
 
-    if (!conta) {
+    if (!conta || !conta.passwordHash) {
       sessionStorage.removeItem(CHAVE_SESSAO);
       return null;
     }
@@ -465,6 +589,13 @@ export function obterSessao(): SessaoLocal | null {
     };
   } catch (erro) {
     console.error("Erro ao validar a sessão:", erro);
+
+    try {
+      sessionStorage.removeItem(CHAVE_SESSAO);
+    } catch {
+      // A sessão será considerada inválida.
+    }
+
     return null;
   }
 }
@@ -481,8 +612,9 @@ export function obterContaAtual(): ContaLocal | null {
   }
 
   return (
-    obterContas().find((conta) => conta.id === sessao.id) ??
-    null
+    obterContas().find(
+      (conta) => conta.id === sessao.id
+    ) ?? null
   );
 }
 
@@ -502,7 +634,8 @@ export function obterContaPorId(
   id: string
 ): ContaLocal | null {
   return (
-    obterContas().find((conta) => conta.id === id) ?? null
+    obterContas().find((conta) => conta.id === id) ??
+    null
   );
 }
 
@@ -513,7 +646,10 @@ export function obterContaPorId(
 export function atualizarPerfil(
   id: string,
   alteracoes: Partial<
-    Omit<PerfilTitular, "tipo" | "documentoBI" | "documentoNuit">
+    Omit<
+      PerfilTitular,
+      "tipo" | "documentoBI" | "documentoNuit"
+    >
   > & {
     tipo?: TipoTitular;
     documentoBI?: DocumentoCarregado | null;
@@ -521,7 +657,10 @@ export function atualizarPerfil(
   }
 ): ContaLocal {
   const contas = obterContas();
-  const indice = contas.findIndex((conta) => conta.id === id);
+
+  const indice = contas.findIndex(
+    (conta) => conta.id === id
+  );
 
   if (indice === -1) {
     throw new Error("Conta não encontrada.");
@@ -531,20 +670,28 @@ export function atualizarPerfil(
 
   contas[indice] = {
     ...conta,
+
     perfil: {
       ...conta.perfil,
       ...alteracoes,
+
       tipo:
         alteracoes.tipo !== undefined
           ? tipoValido(alteracoes.tipo)
           : conta.perfil.tipo,
+
       documentoBI:
         alteracoes.documentoBI !== undefined
-          ? normalizarDocumento(alteracoes.documentoBI)
+          ? normalizarDocumento(
+              alteracoes.documentoBI
+            )
           : conta.perfil.documentoBI,
+
       documentoNuit:
         alteracoes.documentoNuit !== undefined
-          ? normalizarDocumento(alteracoes.documentoNuit)
+          ? normalizarDocumento(
+              alteracoes.documentoNuit
+            )
           : conta.perfil.documentoNuit,
     },
   };
@@ -556,7 +703,7 @@ export function atualizarPerfil(
 
 // ======================================================
 // TERMINAR SESSÃO
-// Remove apenas a autenticação, preservando os dados.
+// Remove a autenticação, mas preserva as contas e os dados.
 // ======================================================
 
 export function terminarSessao(): void {
@@ -565,21 +712,46 @@ export function terminarSessao(): void {
   }
 
   try {
+    // A sessão é removida antes de qualquer redireccionamento.
     sessionStorage.removeItem(CHAVE_SESSAO);
     localStorage.removeItem(CHAVE_SESSAO);
+
+    // Confirmar que não ficou uma sessão activa nesta aba.
+    if (sessionStorage.getItem(CHAVE_SESSAO) !== null) {
+      throw new Error(
+        "A sessão continua armazenada."
+      );
+    }
+
+    // Avisar componentes que estejam a acompanhar a autenticação.
+    window.dispatchEvent(
+      new Event(EVENTO_SESSAO_TERMINADA)
+    );
   } catch (erro) {
-    console.error("Erro ao terminar a sessão:", erro);
+    console.error(
+      "Erro ao terminar a sessão:",
+      erro
+    );
+
+    throw new Error(
+      "Não foi possível terminar a sessão. Tente novamente."
+    );
   }
 }
 
 // ======================================================
 // ELIMINAR CONTA
-// Esta função só é chamada quando se pretende apagar uma conta.
+// Esta operação apaga a conta e os seus dados locais.
+// Não é executada ao terminar sessão.
 // ======================================================
 
 export function eliminarContaLocal(id: string): void {
+  const sessaoAntesDeEliminar = obterSessao();
   const contas = obterContas();
-  const restantes = contas.filter((conta) => conta.id !== id);
+
+  const restantes = contas.filter(
+    (conta) => conta.id !== id
+  );
 
   if (contas.length === restantes.length) {
     throw new Error("Conta não encontrada.");
@@ -587,9 +759,9 @@ export function eliminarContaLocal(id: string): void {
 
   guardarContas(restantes);
 
-  const sessao = obterSessao();
-
-  if (sessao?.id === id) {
+  // Verificar a sessão antes de eliminar a autenticação,
+  // porque a conta já não estará na lista após a remoção.
+  if (sessaoAntesDeEliminar?.id === id) {
     terminarSessao();
   }
 }
