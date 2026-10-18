@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 import { AuthHeader } from "@/components/auth/AuthHeader";
 import { RegisterForm } from "@/components/auth/RegisterForm";
@@ -5,7 +6,7 @@ import { RegisterForm } from "@/components/auth/RegisterForm";
 export default function CriarContaPage() {
   return (
     <main className="flex min-h-dvh w-full items-center justify-center bg-slate-50 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
-      <div className="mx-auto flex w-full max-w-md flex-col justify-center md:max-w-lg">
+      <div className="mx-auto flex w-full max-w-md flex-col justify-center md:max-w-xl">
         <AuthHeader />
 
         <section className="mt-6 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:mt-8 sm:p-7 md:rounded-3xl md:p-8">
@@ -27,7 +28,7 @@ export default function CriarContaPage() {
         <footer className="mt-6 text-center text-sm text-slate-500">
           <Link
             href="/inicio"
-            className="font-medium hover:text-emerald-700"
+            className="font-medium transition-colors hover:text-emerald-700"
           >
             Continuar sem iniciar sessão
           </Link>

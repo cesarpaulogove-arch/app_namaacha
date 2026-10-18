@@ -1,3 +1,4 @@
+
 export type TipoTitular = "cidadao" | "empresa" | "instituicao";
 
 export type OperadorCarteira = "mpesa" | "emola" | "mkesh";
@@ -9,6 +10,13 @@ export type CarteiraMovel = {
   principal: boolean;
 };
 
+export type DocumentoCarregado = {
+  nome: string;
+  tipo: string;
+  tamanho: number;
+  dados: string;
+};
+
 export type PerfilTitular = {
   tipo: TipoTitular;
   nome: string;
@@ -17,6 +25,8 @@ export type PerfilTitular = {
   numeroRegisto: string;
   tipoInstituicao: string;
   endereco: string;
+  documentoBI: DocumentoCarregado | null;
+  documentoNuit: DocumentoCarregado | null;
 };
 
 export type ContaLocal = {
@@ -41,6 +51,8 @@ export type DadosRegisto = {
   numeroRegisto?: string;
   tipoInstituicao?: string;
   endereco?: string;
+  documentoBI?: DocumentoCarregado | null;
+  documentoNuit?: DocumentoCarregado | null;
   operadorCarteira?: OperadorCarteira | "";
   telefoneCarteira?: string;
 };
@@ -59,107 +71,159 @@ function texto(valor: unknown): string {
 }
 
 function tipoValido(valor: unknown): TipoTitular {
-  if (valor === "empresa" || valor === "instituicao") return valor;
+  if (
+    valor === "empresa" ||
+    valor === "instituicao"
+  ) {
+    return valor;
+  }
+
   return "cidadao";
 }
 
 function operadorValido(
   valor: unknown
 ): valor is OperadorCarteira {
-  return valor === "mpesa" || valor === "emola" || valor === "mkesh";
+  return (
+    valor === "mpesa" ||
+    valor === "emola" ||
+    valor === "mkesh"
+  );
 }
 
-function normalizarConta(valor: unknown): ContaLocal | null {
-  if (!valor || typeof valor !== "object") return null;
+function normalizarDocumento(
+  valor: unknown
+): DocumentoCarregado | null {
+  if (!valor || typeof valor !== "object") {
+    return null;
+  }
 
   const item = valor as Record<string, unknown>;
   const nome = texto(item.nome);
-  const email = texto(item.email).toLowerCase();
-  const telefone = texto(item.telefone);
-  const id = texto(item.id);
+  const tipo = texto(item.tipo);
+  const dados =
+    typeof item.dados === "string" ? item.dados : "";
+  const tamanho =
+    typeof item.tamanho === "number" ? item.tamanho : 0;
 
-  if (!id || !nome || !email) return null;
+  if (!nome || !tipo || !dados) {
+    return null;
+  }
 
-  const perfilAntigo =
-    item.perfil && typeof item.perfil === "object"
-      ? (item.perfil as Record<string, unknown>)
-      : {};
-
-  const tipo = tipoValido(perfilAntigo.tipo ?? item.tipoTitular);
-
-  const perfil: PerfilTitular = {
-    tipo,
-    nome: texto(perfilAntigo.nome) || nome,
-    nuit: texto(perfilAntigo.nuit),
-    documentoIdentificacao: texto(
-      perfilAntigo.documentoIdentificacao
-    ),
-    numeroRegisto: texto(perfilAntigo.numeroRegisto),
-    tipoInstituicao: texto(perfilAntigo.tipoInstituicao),
-    endereco: texto(perfilAntigo.endereco),
-  };
-
-  const carteirasAntigas = Array.isArray(item.carteiras)
-    ? item.carteiras
-    : [];
-
-  const carteiras: CarteiraMovel[] = carteirasAntigas
-    .filter(
-      (carteira): carteira is Record<string, unknown> =>
-        !!carteira && typeof carteira === "object"
-    )
-    .filter(
-      (carteira) =>
-        operadorValido(carteira.operador) &&
-        !!texto(carteira.telefone)
-    )
-    .map((carteira, indice) => ({
-      id: texto(carteira.id) || crypto.randomUUID(),
-      operador: carteira.operador as OperadorCarteira,
-      telefone: texto(carteira.telefone),
-      principal: carteira.principal === true || indice === 0,
-    }));
-
-  return {
-    id,
-    nome,
-    email,
-    telefone,
-    passwordHash: texto(item.passwordHash),
-    criadoEm: texto(item.criadoEm) || new Date().toISOString(),
-    perfil,
-    carteiras,
-  };
+  return { nome, tipo, tamanho, dados };
 }
 
 function obterContas(): ContaLocal[] {
-  if (typeof window === "undefined") return [];
+  if (typeof window === "undefined") {
+    return [];
+  }
 
   try {
     const dados = localStorage.getItem(CHAVE_CONTAS);
+
     if (!dados) return [];
 
-    const resultado: unknown = JSON.parse(dados);
-    if (!Array.isArray(resultado)) return [];
+    const contas: unknown = JSON.parse(dados);
 
-    const contas = resultado
-      .map(normalizarConta)
-      .filter((conta): conta is ContaLocal => conta !== null);
+    if (!Array.isArray(contas)) return [];
 
-    // Guarda o formato atualizado, incluindo contas antigas.
-    localStorage.setItem(CHAVE_CONTAS, JSON.stringify(contas));
-
-    return contas;
-  } catch {
+    return contas.map(normalizarConta);
+  } catch (erro) {
+    console.error("Erro ao ler contas locais:", erro);
     return [];
   }
 }
 
-function guardarContas(contas: ContaLocal[]) {
-  localStorage.setItem(CHAVE_CONTAS, JSON.stringify(contas));
+function normalizarConta(valor: unknown): ContaLocal {
+  const item = valor as Record<string, unknown>;
+
+  const perfilOriginal =
+    item.perfil && typeof item.perfil === "object"
+      ? (item.perfil as Record<string, unknown>)
+      : {};
+
+  const carteirasOriginais = Array.isArray(item.carteiras)
+    ? item.carteiras
+    : [];
+
+  const carteiras: CarteiraMovel[] = carteirasOriginais
+    .filter(
+      (carteira): carteira is Record<string, unknown> =>
+        !!carteira && typeof carteira === "object"
+    )
+    .filter((carteira) => operadorValido(carteira.operador))
+    .map((carteira) => ({
+      id: texto(carteira.id) || criarId(),
+      operador: carteira.operador as OperadorCarteira,
+      telefone: texto(carteira.telefone),
+      principal: carteira.principal === true,
+    }));
+
+  return {
+    id: texto(item.id) || criarId(),
+    nome: texto(item.nome),
+    email: texto(item.email).toLowerCase(),
+    telefone: texto(item.telefone),
+    passwordHash: texto(item.passwordHash),
+    criadoEm: texto(item.criadoEm),
+    perfil: {
+      tipo: tipoValido(perfilOriginal.tipo),
+      nome: texto(perfilOriginal.nome) || texto(item.nome),
+      nuit: texto(perfilOriginal.nuit),
+      documentoIdentificacao: texto(
+        perfilOriginal.documentoIdentificacao
+      ),
+      numeroRegisto: texto(perfilOriginal.numeroRegisto),
+      tipoInstituicao: texto(perfilOriginal.tipoInstituicao),
+      endereco: texto(perfilOriginal.endereco),
+      documentoBI: normalizarDocumento(
+        perfilOriginal.documentoBI
+      ),
+      documentoNuit: normalizarDocumento(
+        perfilOriginal.documentoNuit
+      ),
+    },
+    carteiras,
+  };
 }
 
-async function criarHash(password: string): Promise<string> {
+function guardarContas(contas: ContaLocal[]): void {
+  if (typeof window === "undefined") {
+    throw new Error("O armazenamento local não está disponível.");
+  }
+
+  try {
+    localStorage.setItem(CHAVE_CONTAS, JSON.stringify(contas));
+  } catch (erro) {
+    console.error("Erro ao guardar contas:", erro);
+
+    throw new Error(
+      "Não foi possível guardar os dados. Verifique o espaço disponível no navegador."
+    );
+  }
+}
+
+function criarId(): string {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+async function gerarHash(password: string): Promise<string> {
+  if (
+    typeof crypto === "undefined" ||
+    !crypto.subtle
+  ) {
+    throw new Error(
+      "Não foi possível proteger a palavra-passe neste navegador."
+    );
+  }
+
   const dados = new TextEncoder().encode(password);
   const hash = await crypto.subtle.digest("SHA-256", dados);
 
@@ -168,12 +232,9 @@ async function criarHash(password: string): Promise<string> {
     .join("");
 }
 
-function validarTelefone(telefone: string): boolean {
-  const limpo = telefone.replace(/[\s()-]/g, "");
-  return /^\+?258\d{9}$/.test(limpo) || /^8\d{8}$/.test(limpo) || /^2\d{8}$/.test(limpo);
-}
-
-export async function registarConta(dados: DadosRegisto) {
+export async function registarConta(
+  dados: DadosRegisto
+): Promise<ContaLocal> {
   if (typeof window === "undefined") {
     throw new Error("O registo só pode ser feito no navegador.");
   }
@@ -181,52 +242,19 @@ export async function registarConta(dados: DadosRegisto) {
   const nome = texto(dados.nome);
   const email = texto(dados.email).toLowerCase();
   const telefone = texto(dados.telefone);
-  const tipoTitular = tipoValido(dados.tipoTitular);
+  const password = dados.password;
+  const tipo = tipoValido(dados.tipoTitular);
 
-  if (!nome || !email || !telefone || !dados.password) {
-    throw new Error("Preencha todos os campos obrigatórios.");
-  }
-
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new Error("Introduza um email válido.");
-  }
-
-  if (!validarTelefone(telefone)) {
+  if (!nome || !email || !password) {
     throw new Error(
-      "Introduza um número de telefone válido de Moçambique."
+      "Preencha o nome, o email e a palavra-passe."
     );
   }
 
-  if (dados.password.length < 8) {
+  if (password.length < 8) {
     throw new Error(
       "A palavra-passe deve ter pelo menos 8 caracteres."
     );
-  }
-
-  const nuit = texto(dados.nuit);
-  const documentoIdentificacao = texto(dados.documentoIdentificacao);
-  const numeroRegisto = texto(dados.numeroRegisto);
-  const tipoInstituicao = texto(dados.tipoInstituicao);
-  const endereco = texto(dados.endereco);
-
-  if (tipoTitular === "cidadao" && !documentoIdentificacao) {
-    throw new Error(
-      "Introduza o número do documento de identificação."
-    );
-  }
-
-  if (tipoTitular !== "cidadao" && !nuit) {
-    throw new Error("Introduza o NUIT da entidade.");
-  }
-
-  if (tipoTitular === "empresa" && !numeroRegisto) {
-    throw new Error(
-      "Introduza o número de registo da empresa."
-    );
-  }
-
-  if (tipoTitular === "instituicao" && !tipoInstituicao) {
-    throw new Error("Indique o tipo de instituição.");
   }
 
   const contas = obterContas();
@@ -235,90 +263,90 @@ export async function registarConta(dados: DadosRegisto) {
     throw new Error("Já existe uma conta com este email.");
   }
 
-  const operadorCarteira = dados.operadorCarteira || "";
+  if (
+    telefone &&
+    contas.some((conta) => conta.telefone === telefone)
+  ) {
+    throw new Error(
+      "Já existe uma conta com este número de telefone."
+    );
+  }
+
+  const operador = dados.operadorCarteira;
   const telefoneCarteira = texto(dados.telefoneCarteira);
-  const carteiras: CarteiraMovel[] = [];
 
-  if (operadorCarteira && !telefoneCarteira) {
-    throw new Error(
-      "Introduza o número da carteira móvel selecionada."
-    );
-  }
-
-  if (!operadorCarteira && telefoneCarteira) {
-    throw new Error(
-      "Selecione M-Pesa, e-Mola ou mKesh para o número indicado."
-    );
-  }
-
-  if (operadorCarteira && telefoneCarteira) {
-    if (!operadorValido(operadorCarteira)) {
-      throw new Error("Selecione um operador de pagamento válido.");
-    }
-
-    if (!validarTelefone(telefoneCarteira)) {
-      throw new Error(
-        "Introduza um número de pagamento válido de Moçambique."
-      );
-    }
-
-    carteiras.push({
-      id: crypto.randomUUID(),
-      operador: operadorCarteira,
-      telefone: telefoneCarteira,
-      principal: true,
-    });
-  }
+  const carteiras: CarteiraMovel[] =
+    operador && operadorValido(operador) && telefoneCarteira
+      ? [
+          {
+            id: criarId(),
+            operador,
+            telefone: telefoneCarteira,
+            principal: true,
+          },
+        ]
+      : [];
 
   const novaConta: ContaLocal = {
-    id: crypto.randomUUID(),
+    id: criarId(),
     nome,
     email,
     telefone,
-    passwordHash: await criarHash(dados.password),
+    passwordHash: await gerarHash(password),
     criadoEm: new Date().toISOString(),
     perfil: {
-      tipo: tipoTitular,
+      tipo,
       nome,
-      nuit,
-      documentoIdentificacao,
-      numeroRegisto,
-      tipoInstituicao,
-      endereco,
+      nuit: texto(dados.nuit),
+      documentoIdentificacao: texto(
+        dados.documentoIdentificacao
+      ),
+      numeroRegisto: texto(dados.numeroRegisto),
+      tipoInstituicao: texto(dados.tipoInstituicao),
+      endereco: texto(dados.endereco),
+      documentoBI: normalizarDocumento(dados.documentoBI),
+      documentoNuit: normalizarDocumento(dados.documentoNuit),
     },
     carteiras,
   };
 
-  contas.push(novaConta);
-  guardarContas(contas);
+  guardarContas([...contas, novaConta]);
 
-  return {
-    id: novaConta.id,
-    nome: novaConta.nome,
-    email: novaConta.email,
-  };
+  return novaConta;
 }
 
 export async function iniciarSessao(
-  emailInput: string,
+  identificador: string,
   password: string
 ): Promise<SessaoLocal> {
   if (typeof window === "undefined") {
-    throw new Error("O login só pode ser feito no navegador.");
+    throw new Error("O início de sessão só funciona no navegador.");
   }
 
-  const email = emailInput.trim().toLowerCase();
+  const valor = texto(identificador).toLowerCase();
+
+  if (!valor || !password) {
+    throw new Error(
+      "Introduza o email ou telefone e a palavra-passe."
+    );
+  }
+
   const contas = obterContas();
-  const conta = contas.find((item) => item.email === email);
 
-  if (!conta || !conta.passwordHash) {
-    throw new Error("Email ou palavra-passe incorretos.");
+  const conta = contas.find(
+    (item) =>
+      item.email.toLowerCase() === valor ||
+      item.telefone === texto(identificador)
+  );
+
+  if (!conta) {
+    throw new Error("Conta não encontrada.");
   }
 
-  const passwordHash = await criarHash(password);
+  const hash = await gerarHash(password);
 
-  if (passwordHash !== conta.passwordHash) {
-    throw new Error("Email ou palavra-passe incorretos.");
+  if (conta.passwordHash !== hash) {
+    throw new Error("Palavra-passe incorreta.");
   }
 
   const sessao: SessaoLocal = {
@@ -327,116 +355,134 @@ export async function iniciarSessao(
     email: conta.email,
   };
 
-  localStorage.setItem(CHAVE_SESSAO, JSON.stringify(sessao));
+  try {
+    localStorage.setItem(CHAVE_SESSAO, JSON.stringify(sessao));
+  } catch {
+    throw new Error(
+      "Não foi possível guardar a sessão neste navegador."
+    );
+  }
 
   return sessao;
 }
 
 export function obterSessao(): SessaoLocal | null {
-  if (typeof window === "undefined") return null;
+  if (typeof window === "undefined") {
+    return null;
+  }
 
   try {
     const dados = localStorage.getItem(CHAVE_SESSAO);
+
     if (!dados) return null;
 
     const sessao: unknown = JSON.parse(dados);
 
-    if (!sessao || typeof sessao !== "object") return null;
+    if (!sessao || typeof sessao !== "object") {
+      return null;
+    }
 
     const item = sessao as Record<string, unknown>;
 
     if (
-      typeof item.id !== "string" ||
-      typeof item.email !== "string" ||
-      typeof item.nome !== "string"
+      !texto(item.id) ||
+      !texto(item.nome) ||
+      !texto(item.email)
     ) {
       return null;
     }
 
     return {
-      id: item.id,
-      nome: item.nome,
-      email: item.email,
+      id: texto(item.id),
+      nome: texto(item.nome),
+      email: texto(item.email),
     };
   } catch {
     return null;
   }
 }
 
-export function obterConta(id: string): ContaLocal | null {
+export function obterContaAtual(): ContaLocal | null {
+  const sessao = obterSessao();
+
+  if (!sessao) return null;
+
+  return (
+    obterContas().find((conta) => conta.id === sessao.id) ?? null
+  );
+}
+
+export function listarContas(): ContaLocal[] {
+  return obterContas();
+}
+
+export function obterContaPorId(id: string): ContaLocal | null {
   return obterContas().find((conta) => conta.id === id) ?? null;
 }
 
-export function obterContaAtual(): ContaLocal | null {
-  const sessao = obterSessao();
-  if (!sessao) return null;
-
-  return obterConta(sessao.id);
-}
-
-export function atualizarCarteiras(
-  carteirasNovas: CarteiraMovel[]
+export function atualizarPerfil(
+  id: string,
+  alteracoes: Partial<
+    Omit<PerfilTitular, "tipo" | "documentoBI" | "documentoNuit">
+  > & {
+    tipo?: TipoTitular;
+    documentoBI?: DocumentoCarregado | null;
+    documentoNuit?: DocumentoCarregado | null;
+  }
 ): ContaLocal {
-  if (typeof window === "undefined") {
-    throw new Error("Esta operação só pode ser feita no navegador.");
-  }
-
-  const sessao = obterSessao();
-
-  if (!sessao) {
-    throw new Error("Inicie sessão para configurar os pagamentos.");
-  }
-
   const contas = obterContas();
-  const indice = contas.findIndex((conta) => conta.id === sessao.id);
+  const indice = contas.findIndex((conta) => conta.id === id);
 
-  if (indice < 0) {
-    throw new Error("Não foi possível encontrar a conta.");
+  if (indice === -1) {
+    throw new Error("Conta não encontrada.");
   }
 
-  if (carteirasNovas.some(
-    (carteira) => !operadorValido(carteira.operador) ||
-      !validarTelefone(carteira.telefone)
-  )) {
-    throw new Error("Verifique os operadores e números de pagamento.");
-  }
+  const conta = contas[indice];
 
-  const ids = new Set<string>();
-  for (const carteira of carteirasNovas) {
-    if (ids.has(carteira.operador)) {
-      throw new Error(
-        "Configure apenas um número por operador de pagamento."
-      );
-    }
-    ids.add(carteira.operador);
-  }
-
-  const principalCount = carteirasNovas.filter(
-    (carteira) => carteira.principal
-  ).length;
-
-  if (carteirasNovas.length > 0 && principalCount !== 1) {
-    throw new Error(
-      "Selecione exatamente um número de pagamento principal."
-    );
-  }
-
-  const contaAtualizada: ContaLocal = {
-    ...contas[indice],
-    carteiras: carteirasNovas.map((carteira) => ({
-      ...carteira,
-      id: carteira.id || crypto.randomUUID(),
-    })),
+  contas[indice] = {
+    ...conta,
+    perfil: {
+      ...conta.perfil,
+      ...alteracoes,
+      tipo:
+        alteracoes.tipo !== undefined
+          ? tipoValido(alteracoes.tipo)
+          : conta.perfil.tipo,
+      documentoBI:
+        alteracoes.documentoBI !== undefined
+          ? normalizarDocumento(alteracoes.documentoBI)
+          : conta.perfil.documentoBI,
+      documentoNuit:
+        alteracoes.documentoNuit !== undefined
+          ? normalizarDocumento(alteracoes.documentoNuit)
+          : conta.perfil.documentoNuit,
+    },
   };
 
-  contas[indice] = contaAtualizada;
   guardarContas(contas);
 
-  return contaAtualizada;
+  return contas[indice];
 }
 
-export function terminarSessao() {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(CHAVE_SESSAO);
+export function terminarSessao(): void {
+  if (typeof window === "undefined") return;
+
+  localStorage.removeItem(CHAVE_SESSAO);
+}
+
+export function eliminarContaLocal(id: string): void {
+  const contas = obterContas();
+  const restantes = contas.filter((conta) => conta.id !== id);
+
+  if (contas.length === restantes.length) {
+    throw new Error("Conta não encontrada.");
+  }
+
+  guardarContas(restantes);
+
+  const sessao = obterSessao();
+
+  if (sessao?.id === id) {
+    terminarSessao();
   }
 }
